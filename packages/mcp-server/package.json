@@ -1,7 +1,7 @@
 {
   "name": "@voice-dev/mcp-server",
   "version": "0.3.0",
-  "description": "MCP Server for interfacing with tmux sessions",
+  "description": "MCP Server for voice-controlled terminal development",
   "type": "module",
   "main": "build/index.js",
   "scripts": {
@@ -14,7 +14,7 @@
     "release": "npm run build && npm publish"
   },
   "bin": {
-    "tmux-mcp": "build/index.js"
+    "voice-dev-mcp": "build/index.js"
   },
   "files": [
     "build"

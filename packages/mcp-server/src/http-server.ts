@@ -34,7 +34,7 @@ export function startHttpServer({ port, password, server }: HttpServerOptions): 
   app.get('/', (req: Request, res: Response) => {
     res.json({
       status: 'ok',
-      service: 'tmux-mcp',
+      service: 'voice-dev-mcp',
       transport: 'streamable-http'
     });
   });

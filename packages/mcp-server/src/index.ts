@@ -13,7 +13,7 @@ import { startHttpServer } from "./http-server.js";
 // Create MCP server
 const server = new McpServer(
   {
-    name: "tmux-mcp",
+    name: "voice-dev-mcp",
     version: "0.3.0",
   },
   {
@@ -30,10 +30,10 @@ const server = new McpServer(
   }
 );
 
-// List tmux hierarchy - Tool
+// List hierarchy - Tool
 server.tool(
   "list",
-  "List tmux sessions, windows, and panes. Use scope='all' for full hierarchy, or drill down with specific scopes. Examples: scope='all' returns nested tree, scope='sessions' returns all sessions, scope='session' with target='$0' returns windows in that session, scope='window' with target='@1' returns panes in that window.",
+  "List sessions, windows, and panes. Use scope='all' for full hierarchy, or drill down with specific scopes. Examples: scope='all' returns nested tree, scope='sessions' returns all sessions, scope='session' with target='$0' returns windows in that session, scope='window' with target='@1' returns panes in that window.",
   {
     scope: z
       .enum(["all", "sessions", "session", "window", "pane"])
@@ -75,9 +75,9 @@ server.tool(
 // Capture pane content - Tool
 server.tool(
   "capture-pane",
-  "Capture content from a tmux pane with configurable lines count and optional color preservation. Optionally wait before capturing to allow commands to complete.",
+  "Capture content from a pane with configurable lines count and optional color preservation. Optionally wait before capturing to allow commands to complete.",
   {
-    paneId: z.string().describe("ID of the tmux pane"),
+    paneId: z.string().describe("ID of the pane"),
     lines: z.string().optional().describe("Number of lines to capture"),
     colors: z
       .boolean()
@@ -132,9 +132,9 @@ server.tool(
 // Create new session - Tool
 server.tool(
   "create-session",
-  "Create a new tmux session",
+  "Create a new session",
   {
-    name: z.string().describe("Name for the new tmux session"),
+    name: z.string().describe("Name for the new session"),
   },
   async ({ name }) => {
     try {
@@ -166,9 +166,9 @@ server.tool(
 // Create new window - Tool
 server.tool(
   "create-window",
-  "Create a new window in a tmux session. Returns the window ID and the default pane ID. Optionally execute a command in the new window immediately after creation - the command can use any bash operators (&&, ||, |, ;, etc.).",
+  "Create a new window in a session. Returns the window ID and the default pane ID. Optionally execute a command in the new window immediately after creation - the command can use any bash operators (&&, ||, |, ;, etc.).",
   {
-    sessionId: z.string().describe("ID of the tmux session"),
+    sessionId: z.string().describe("ID of the session"),
     name: z.string().describe("Name for the new window"),
     command: z
       .string()
@@ -237,9 +237,9 @@ server.tool(
 // Rename window - Tool
 server.tool(
   "rename-window",
-  "Rename a tmux window by its window ID (e.g., @380)",
+  "Rename a window by its window ID (e.g., @380)",
   {
-    windowId: z.string().describe("ID of the tmux window (e.g., '@380')"),
+    windowId: z.string().describe("ID of the window (e.g., '@380')"),
     name: z.string().describe("New name for the window"),
   },
   async ({ windowId, name }) => {
@@ -267,10 +267,10 @@ server.tool(
   }
 );
 
-// Kill tmux resources - Tool
+// Kill resources - Tool
 server.tool(
   "kill",
-  "Kill a tmux session, window, or pane. Examples: kill(scope='session', target='$0'), kill(scope='window', target='@1'), kill(scope='pane', target='%2'). No 'all' scope for safety.",
+  "Kill a session, window, or pane. Examples: kill(scope='session', target='$0'), kill(scope='window', target='@1'), kill(scope='pane', target='%2'). No 'all' scope for safety.",
   {
     scope: z
       .enum(["session", "window", "pane"])
@@ -311,9 +311,9 @@ server.tool(
 // Split pane - Tool
 server.tool(
   "split-pane",
-  "Split a tmux pane horizontally or vertically",
+  "Split a pane horizontally or vertically",
   {
-    paneId: z.string().describe("ID of the tmux pane to split"),
+    paneId: z.string().describe("ID of the pane to split"),
     direction: z
       .enum(["horizontal", "vertical"])
       .optional()
@@ -365,9 +365,9 @@ server.tool(
 // Execute shell command - Tool
 server.tool(
   "execute-shell-command",
-  "Execute a shell command in a tmux pane synchronously and return results immediately. Waits for command completion (default 30s timeout). Returns output, exit code, and status. Use for quick commands (ls, grep, npm test, etc.). Avoid heredoc syntax (cat << EOF) and multi-line constructs. IMPORTANT: For long-running commands (npm start, servers, watch processes), use send-text with pressEnter=true instead, then monitor output with capture-pane. For interactive apps or special keys, use send-keys.",
+  "Execute a shell command in a pane synchronously and return results immediately. Waits for command completion (default 30s timeout). Returns output, exit code, and status. Use for quick commands (ls, grep, npm test, etc.). Avoid heredoc syntax (cat << EOF) and multi-line constructs. IMPORTANT: For long-running commands (npm start, servers, watch processes), use send-text with pressEnter=true instead, then monitor output with capture-pane. For interactive apps or special keys, use send-keys.",
   {
-    paneId: z.string().describe("ID of the tmux pane"),
+    paneId: z.string().describe("ID of the pane"),
     command: z.string().describe("Shell command to execute"),
     timeout: z
       .number()
@@ -412,9 +412,9 @@ server.tool(
 // Send keys - Tool
 server.tool(
   "send-keys",
-  "Send special keys or key combinations to a tmux pane. Use for TUI navigation and control sequences. Examples: 'Up', 'Down', 'Enter', 'Escape', 'C-c' (Ctrl+C), 'M-x' (Alt+X), 'C-b' (tmux prefix). For typing regular text, use send-text instead. Supports repeating key presses and optionally capturing output after sending keys.",
+  "Send special keys or key combinations to a pane. Use for TUI navigation and control sequences. Examples: 'Up', 'Down', 'Enter', 'Escape', 'C-c' (Ctrl+C), 'M-x' (Alt+X). For typing regular text, use send-text instead. Supports repeating key presses and optionally capturing output after sending keys.",
   {
-    paneId: z.string().describe("ID of the tmux pane"),
+    paneId: z.string().describe("ID of the pane"),
     keys: z
       .string()
       .describe(
@@ -490,9 +490,9 @@ server.tool(
 // Send text - Tool
 server.tool(
   "send-text",
-  "Type text into a tmux pane. This is the PRIMARY way to execute shell commands with bash operators (&&, ||, |, ;, etc.) - set pressEnter=true to run the command. Also use for interactive applications, REPLs, forms, and text entry. For special keys or control sequences, use send-keys instead.",
+  "Type text into a pane. This is the PRIMARY way to execute shell commands with bash operators (&&, ||, |, ;, etc.) - set pressEnter=true to run the command. Also use for interactive applications, REPLs, forms, and text entry. For special keys or control sequences, use send-keys instead.",
   {
-    paneId: z.string().describe("ID of the tmux pane"),
+    paneId: z.string().describe("ID of the pane"),
     text: z
       .string()
       .describe(
@@ -566,8 +566,8 @@ server.tool(
   }
 );
 
-// Expose tmux session list as a resource
-server.resource("Tmux Sessions", "tmux://sessions", async () => {
+// Expose session list as a resource
+server.resource("Sessions", "tmux://sessions", async () => {
   try {
     const sessions = await tmux.listSessions();
     return {
@@ -592,7 +592,7 @@ server.resource("Tmux Sessions", "tmux://sessions", async () => {
       contents: [
         {
           uri: "tmux://sessions",
-          text: `Error listing tmux sessions: ${error}`,
+          text: `Error listing sessions: ${error}`,
         },
       ],
     };
@@ -601,7 +601,7 @@ server.resource("Tmux Sessions", "tmux://sessions", async () => {
 
 // Expose pane content as a resource
 server.resource(
-  "Tmux Pane Content",
+  "Pane Content",
   new ResourceTemplate("tmux://pane/{paneId}", {
     list: async () => {
       try {
@@ -702,7 +702,7 @@ async function main() {
         process.exit(1);
       }
 
-      const port = parseInt(values.port || process.env.PORT || "3000", 10);
+      const port = Number(values.port || process.env.PORT || "6767");
 
       // Start HTTP server
       startHttpServer({

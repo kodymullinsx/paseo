@@ -6,14 +6,14 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=web",
-    "dev:mcp": "npm run dev --workspace=mcp-server",
+    "dev": "npm run dev --workspace=@voice-dev/web",
+    "dev:mcp": "npm run dev --workspace=@voice-dev/mcp-server",
     "build": "npm run build --workspaces --if-present",
-    "build:mcp": "npm run build --workspace=mcp-server",
-    "build:web": "npm run build --workspace=web",
+    "build:mcp": "npm run build --workspace=@voice-dev/mcp-server",
+    "build:web": "npm run build --workspace=@voice-dev/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "start": "npm run start --workspace=web",
-    "start:mcp": "npm run start --workspace=mcp-server"
+    "start": "npm run start --workspace=@voice-dev/web",
+    "start:mcp": "npm run start --workspace=@voice-dev/mcp-server"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

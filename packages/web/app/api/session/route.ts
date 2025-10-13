@@ -38,7 +38,7 @@ export async function POST() {
           tools: [
             {
               type: 'mcp',
-              server_label: 'tmux-mcp',
+              server_label: 'voice-dev-mcp',
               server_url: mcpServerUrl,
               require_approval: 'never',
             },
