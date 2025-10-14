@@ -1,8 +1,12 @@
-// Re-export types from openai-realtime-api for type safety
-import type { RealtimeServerEvents, RealtimeClientEvents } from 'openai-realtime-api';
+// LiveKit event types (simplified for our use case)
+export interface LiveKitEvent {
+  type: string;
+  [key: string]: any;
+}
 
-export type RealtimeServerEvent = RealtimeServerEvents.EventMap[RealtimeServerEvents.EventType];
-export type RealtimeClientEvent = RealtimeClientEvents.EventMap[RealtimeClientEvents.EventType];
+// Keep OpenAI types for backward compatibility during transition
+export type RealtimeServerEvent = LiveKitEvent;
+export type RealtimeClientEvent = LiveKitEvent;
 
 // Agent status enum
 export type AgentStatus =
@@ -40,6 +44,13 @@ export interface LogEntry {
 export function categorizeEvent(event: RealtimeServerEvent): EventCategory {
   const type = event.type;
 
+  // LiveKit events
+  if (type.includes('connected') || type.includes('disconnected')) return 'connection';
+  if (type.includes('track')) return 'audio';
+  if (type.includes('participant')) return 'connection';
+  if (type.includes('data')) return 'other';
+
+  // OpenAI events (for backward compatibility)
   if (type.startsWith('session.')) return 'connection';
   if (type.startsWith('input_audio_buffer.')) return 'speech';
   if (type.includes('transcription')) return 'transcription';
@@ -57,6 +68,17 @@ export function categorizeEvent(event: RealtimeServerEvent): EventCategory {
 export function getEventSummary(event: RealtimeServerEvent): string {
   const type = event.type;
 
+  // LiveKit events
+  if (type === 'connected') return 'Connected to LiveKit';
+  if (type === 'disconnected') return 'Disconnected from LiveKit';
+  if (type === 'reconnecting') return 'Reconnecting...';
+  if (type === 'reconnected') return 'Reconnected';
+  if (type === 'track_subscribed') return 'Audio track subscribed';
+  if (type === 'participant_connected') return 'Participant connected';
+  if (type === 'participant_disconnected') return 'Participant disconnected';
+  if (type === 'data_received') return 'Data received';
+
+  // OpenAI events (for backward compatibility)
   switch (type) {
     case 'session.created':
       return 'Session established';
@@ -118,6 +140,13 @@ export function getEventSummary(event: RealtimeServerEvent): string {
 export function getStatusFromEvent(event: RealtimeServerEvent): AgentStatus | null {
   const type = event.type;
 
+  // LiveKit events
+  if (type === 'connected') return 'connected';
+  if (type === 'disconnected') return 'disconnected';
+  if (type === 'reconnecting') return 'connecting';
+  if (type === 'reconnected') return 'connected';
+
+  // OpenAI events (for backward compatibility)
   switch (type) {
     case 'session.created':
       return 'connected';

@@ -1,4 +1,29 @@
-export const SYSTEM_PROMPT = `# Virtual Assistant Instructions
+"""
+LiveKit Voice Agent with MCP Support (Python)
+Migrated from Node.js version with added MCP integration
+"""
+
+import asyncio
+import os
+from typing import Annotated
+
+from dotenv import load_dotenv
+from livekit import rtc
+from livekit.agents import (
+    AutoSubscribe,
+    JobContext,
+    JobProcess,
+    WorkerOptions,
+    cli,
+    llm,
+    voice,
+)
+from livekit.agents.llm.mcp import MCPServerHTTP
+
+# Load environment variables
+load_dotenv()
+
+SYSTEM_PROMPT = """# Virtual Assistant Instructions
 
 ## Your Role
 
@@ -481,4 +506,100 @@ You: Run gh pr create directly via send-text with return_output
 
 ### Blank.page - A minimal text editor in your browser
 - Location: ~/dev/blank.page/editor
-`;
+"""
+SYSTEM_PROMPT = """# Virtual Assistant Instructions
+
+## Your Role
+
+You are a virtual assistant with direct access to the user's terminal environment on their laptop. Your primary purpose is to help them code and manage their development workflow, especially through Claude Code running in terminal sessions.
+
+## Connection Setup
+
+- **Environment**: You connect remotely to the user's laptop terminal environment
+- **User's device**: They typically code from their **phone**
+- **Key implication**: Be mindful of voice-to-text issues, autocorrect problems, and typos
+- **Projects location**: All projects are in ~/dev
+- **GitHub CLI**: gh command is available and already authenticated - use it for GitHub operations
+
+## Important Behavioral Guidelines
+
+### Response Pattern: ALWAYS Talk First, Then Act
+
+**CRITICAL**: For voice interactions, ALWAYS provide verbal acknowledgment BEFORE executing tool calls.
+
+**Pattern to follow:**
+1. **Acknowledge** what you heard: "Got it, I'll [action]"
+2. **Briefly explain** what you're about to do (1-2 sentences max)
+3. **Then execute** the tool calls
+4. **Report back** what happened after the tools complete
+
+### Communication Style
+- **Confirm commands** before executing, especially destructive operations
+- **Be patient** with spelling errors and voice-related mistakes
+- **Clarify ambiguous requests** rather than guessing
+- **Acknowledge typos naturally** without making a big deal of it
+- **Use clear, concise language** - mobile screens are small
+
+### Mobile-Friendly Responses
+- Keep responses scannable and well-structured
+- Use bullet points and headers effectively
+- Avoid overwhelming walls of text
+- Highlight important information with bold
+
+## Remember
+
+- **Mobile user** - Be concise and confirm actions
+- **Voice input** - Forgive typos, clarify when needed
+- **Be helpful** - You're here to make coding from a phone easier!
+"""
+
+
+async def entrypoint(ctx: JobContext):
+    """Main entry point for the voice agent."""
+
+    # Get MCP server URL from environment
+    mcp_server_url = os.getenv("MCP_SERVER_URL")
+
+    # Prepare MCP servers list
+    mcp_servers = []
+    if mcp_server_url:
+        print(f"✓ MCP Server configured: {mcp_server_url}")
+        server = MCPServerHTTP(
+            url=mcp_server_url,
+            timeout=10
+        )
+        mcp_servers.append(server)
+    else:
+        print("⚠ No MCP_SERVER_URL found in environment")
+
+    # Connect to the room
+    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+
+    # Create the voice agent with MCP tools
+    agent = voice.Agent(
+        instructions=SYSTEM_PROMPT,
+        mcp_servers=mcp_servers,  # Native MCP support!
+    )
+
+    # Create the agent session with LiveKit Inference
+    # Using same configuration as Node.js version
+    session = voice.AgentSession(
+        stt="assemblyai/universal-streaming:en",
+        llm="openai/gpt-4.1-mini",
+        tts="cartesia/sonic-2:9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+    )
+
+    # Start the session
+    await session.start(agent=agent, room=ctx.room)
+
+    print(f"✓ Agent started successfully in room: {ctx.room.name}")
+    print(f"✓ MCP servers: {len(mcp_servers)} configured")
+
+
+if __name__ == "__main__":
+    # Run the agent worker
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+        )
+    )

@@ -7,12 +7,15 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=@voice-dev/web",
+    "dev:agent": "npm run dev --workspace=@voice-dev/agent",
     "dev:mcp": "npm run dev --workspace=@voice-dev/mcp-server",
     "build": "npm run build --workspaces --if-present",
+    "build:agent": "npm run build --workspace=@voice-dev/agent",
     "build:mcp": "npm run build --workspace=@voice-dev/mcp-server",
     "build:web": "npm run build --workspace=@voice-dev/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "start": "npm run start --workspace=@voice-dev/web",
+    "start:agent": "npm run start --workspace=@voice-dev/agent",
     "start:mcp": "npm run start --workspace=@voice-dev/mcp-server"
   },
   "devDependencies": {

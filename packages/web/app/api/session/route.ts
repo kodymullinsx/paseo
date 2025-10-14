@@ -1,62 +1,67 @@
-import { NextResponse } from 'next/server';
-import { SYSTEM_PROMPT } from './system-prompt';
+import { NextResponse } from "next/server";
+import { AccessToken, type VideoGrant } from "livekit-server-sdk";
+
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+const LIVEKIT_URL = process.env.LIVEKIT_URL;
 
 export async function POST() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const mcpServerUrl = process.env.MCP_SERVER_URL;
-
-  if (!apiKey) {
+  if (!LIVEKIT_API_KEY) {
     return NextResponse.json(
-      { error: 'OpenAI API key not configured' },
+      { error: "LiveKit API key not configured" },
       { status: 500 }
     );
   }
 
-  if (!mcpServerUrl) {
+  if (!LIVEKIT_API_SECRET) {
     return NextResponse.json(
-      { error: 'MCP server URL not configured' },
+      { error: "LiveKit API secret not configured" },
+      { status: 500 }
+    );
+  }
+
+  if (!LIVEKIT_URL) {
+    return NextResponse.json(
+      { error: "LiveKit URL not configured" },
       { status: 500 }
     );
   }
 
   try {
-    const response = await fetch(
-      'https://api.openai.com/v1/realtime/sessions',
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-realtime',
-          voice: 'shimmer',
-          instructions: SYSTEM_PROMPT,
-          input_audio_transcription: {
-            model: 'gpt-4o-transcribe',
-          },
-          tools: [
-            {
-              type: 'mcp',
-              server_label: 'voice-dev-mcp',
-              server_url: mcpServerUrl,
-              require_approval: 'never',
-            },
-          ],
-        }),
-      }
-    );
+    console.log("Creating LiveKit token...");
 
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
-    }
+    const participantIdentity = `voice_user_${Math.floor(Math.random() * 10_000)}`;
+    const participantName = "user";
+    const roomName = `voice_room_${Math.floor(Math.random() * 10_000)}`;
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    const token = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+      identity: participantIdentity,
+      name: participantName,
+      ttl: "15m",
+    });
+
+    const grant: VideoGrant = {
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canPublishData: true,
+      canSubscribe: true,
+    };
+
+    token.addGrant(grant);
+
+    const jwt = await token.toJwt();
+
+    return NextResponse.json({
+      serverUrl: LIVEKIT_URL,
+      roomName,
+      participantToken: jwt,
+      participantName,
+    });
   } catch (error) {
-    console.error('Session creation error:', error);
+    console.error("Token creation error:", error);
     return NextResponse.json(
-      { error: 'Failed to create session' },
+      { error: "Failed to create token" },
       { status: 500 }
     );
   }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useWebRTCVoice } from './hooks/use-webrtc-voice';
+import { useLiveKitVoice } from './hooks/use-livekit-voice';
 import { useAudioLevel } from './hooks/use-audio-level';
 import { useAudioDevices } from './hooks/use-audio-devices';
 import { useEventLog } from './hooks/use-event-log';
@@ -24,7 +24,7 @@ export default function VoiceClient() {
     stream,
     connect,
     disconnect
-  } = useWebRTCVoice({
+  } = useLiveKitVoice({
     onEvent: addLog
   });
 
