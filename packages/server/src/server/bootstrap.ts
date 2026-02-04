@@ -56,6 +56,7 @@ import {
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
 import { printPairingQrIfEnabled } from "./pairing-qr.js";
 import { startRelayTransport, type RelayTransportController } from "./relay-transport.js";
+import { getOrCreateServerId } from "./server-id.js";
 import type {
   AgentClient,
   AgentProvider,
@@ -103,9 +104,10 @@ export interface PaseoDaemon {
 export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger
-  ): Promise<PaseoDaemon> {
+): Promise<PaseoDaemon> {
   const logger = rootLogger.child({ module: "bootstrap" });
-  const connectionSessionId = randomUUID();
+  const serverId = getOrCreateServerId(config.paseoHome, { logger });
+  const connectionSessionId = serverId;
   const daemonKeyPair = await loadOrCreateDaemonKeyPair(config.paseoHome, logger);
   let relayTransport: RelayTransportController | null = null;
 
@@ -418,6 +420,7 @@ export async function createPaseoDaemon(
   const wsServer = new VoiceAssistantWebSocketServer(
     httpServer,
     logger,
+    serverId,
     agentManager,
     agentStorage,
     downloadTokenStore,

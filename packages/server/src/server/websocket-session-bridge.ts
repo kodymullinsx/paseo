@@ -46,6 +46,7 @@ export class WebSocketSessionBridge {
   private readonly logger: pino.Logger;
   private readonly sessions: Map<WebSocketLike, Session> = new Map();
   private clientIdCounter = 0;
+  private readonly serverId: string;
   private readonly agentManager: AgentManager;
   private readonly agentStorage: AgentStorage;
   private readonly downloadTokenStore: DownloadTokenStore;
@@ -68,6 +69,7 @@ export class WebSocketSessionBridge {
 
   constructor(
     logger: pino.Logger,
+    serverId: string,
     agentManager: AgentManager,
     agentStorage: AgentStorage,
     downloadTokenStore: DownloadTokenStore,
@@ -85,6 +87,7 @@ export class WebSocketSessionBridge {
     }
   ) {
     this.logger = logger.child({ module: "websocket-session-bridge" });
+    this.serverId = serverId;
     this.agentManager = agentManager;
     this.agentStorage = agentStorage;
     this.downloadTokenStore = downloadTokenStore;
@@ -140,6 +143,18 @@ export class WebSocketSessionBridge {
     );
 
     this.sessions.set(ws, session);
+
+    // Advertise stable server identity immediately on connect (used for URL/shareable IDs).
+    this.sendToClient(
+      ws,
+      wrapSessionMessage({
+        type: "status",
+        payload: {
+          status: "server_info",
+          serverId: this.serverId,
+        },
+      })
+    );
 
     connectionLogger.info(
       { clientId, totalSessions: this.sessions.size },
