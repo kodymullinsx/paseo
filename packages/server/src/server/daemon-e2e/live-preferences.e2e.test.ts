@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
+import { execFileSync } from "node:child_process";
 import {
   createDaemonTestContext,
   type DaemonTestContext,
@@ -49,6 +50,18 @@ function pickTwoDistinctModels(models: Array<{ id: string }>): [string, string] 
   return [ids[0]!, ids[1]!];
 }
 
+function isBinaryInstalled(binary: string): boolean {
+  try {
+    const out = execFileSync("which", [binary], { encoding: "utf8" }).trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+const hasCodex = isBinaryInstalled("codex");
+const hasOpenCode = isBinaryInstalled("opencode");
+
 describe("daemon E2E", () => {
   let ctx: DaemonTestContext;
   let messages: SessionOutboundMessage[] = [];
@@ -71,7 +84,12 @@ describe("daemon E2E", () => {
   describe.each(["claude", "codex", "opencode"] as const)(
     "live model switching (%s)",
     (provider) => {
-      test(
+      const shouldRun =
+        provider === "claude" ||
+        (provider === "codex" && hasCodex) ||
+        (provider === "opencode" && hasOpenCode);
+
+      test.runIf(shouldRun)(
         "updates agent model without restarting",
         async () => {
           const cwd = tmpCwd();
@@ -150,7 +168,7 @@ describe("daemon E2E", () => {
     120000
   );
 
-  test(
+  test.runIf(hasCodex)(
     "live thinking switching works for Codex (default -> non-default)",
     async () => {
       const cwd = tmpCwd();
@@ -198,7 +216,7 @@ describe("daemon E2E", () => {
     120000
   );
 
-  test(
+  test.runIf(hasOpenCode)(
     "live thinking switching works for OpenCode",
     async () => {
       const cwd = tmpCwd();

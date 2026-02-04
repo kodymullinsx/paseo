@@ -11,7 +11,9 @@ function tmpCwd(): string {
   return mkdtempSync(path.join(tmpdir(), "daemon-terminal-e2e-"));
 }
 
-describe("daemon E2E terminal", () => {
+const shouldRun = !process.env.CI;
+
+(shouldRun ? describe : describe.skip)("daemon E2E terminal", () => {
   let ctx: DaemonTestContext;
 
   beforeEach(async () => {

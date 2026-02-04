@@ -1,9 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { execFileSync } from "node:child_process";
 
 import {
   createDaemonTestContext,
   type DaemonTestContext,
 } from "../test-utils/index.js";
+
+function isBinaryInstalled(binary: string): boolean {
+  try {
+    const out = execFileSync("which", [binary], { encoding: "utf8" }).trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+const hasCodex = isBinaryInstalled("codex");
+const hasOpenCode = isBinaryInstalled("opencode");
 
 describe("provider model catalogs (e2e)", () => {
   let ctx: DaemonTestContext;
@@ -33,7 +46,7 @@ describe("provider model catalogs (e2e)", () => {
     180_000
   );
 
-  test(
+  test.runIf(hasCodex)(
     "Codex catalog exposes gpt-5.1-codex",
     async () => {
       const result = await ctx.client.listProviderModels("codex");
@@ -45,7 +58,7 @@ describe("provider model catalogs (e2e)", () => {
     180_000
   );
 
-  test(
+  test.runIf(hasOpenCode)(
     "OpenCode catalog returns models from multiple providers",
     async () => {
       const result = await ctx.client.listProviderModels("opencode");

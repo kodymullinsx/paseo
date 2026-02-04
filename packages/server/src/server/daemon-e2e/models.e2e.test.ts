@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, existsSync, rmSync, mkdirSync, readFileSync, readdirSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
+import { execFileSync } from "node:child_process";
 import {
   createDaemonTestContext,
   type DaemonTestContext,
@@ -15,6 +16,18 @@ function tmpCwd(): string {
 
 const CODEX_TEST_MODEL = "gpt-5.1-codex-mini";
 
+function isBinaryInstalled(binary: string): boolean {
+  try {
+    const out = execFileSync("which", [binary], { encoding: "utf8" }).trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+const hasCodex = isBinaryInstalled("codex");
+const hasOpenCode = isBinaryInstalled("opencode");
+
 describe("daemon E2E", () => {
   let ctx: DaemonTestContext;
 
@@ -27,7 +40,7 @@ describe("daemon E2E", () => {
   }, 60000);
 
   describe("listProviderModels", () => {
-    test(
+    test.runIf(hasCodex)(
       "returns model list for Codex provider",
       async () => {
         // List models for Codex provider - no agent needed
@@ -75,7 +88,7 @@ describe("daemon E2E", () => {
       60000 // 1 minute timeout
     );
 
-    test(
+    test.runIf(hasOpenCode)(
       "returns model list for OpenCode provider",
       async () => {
         const result = await ctx.client.listProviderModels("opencode");

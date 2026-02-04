@@ -393,7 +393,8 @@ export class TerminalManager {
           paneId,
           "#{pane_dead_status}",
         ]);
-        exitCode = parseInt(exitCodeStr, 10);
+        const parsed = parseInt(exitCodeStr, 10);
+        exitCode = Number.isFinite(parsed) ? parsed : null;
       }
 
       commands.push({
@@ -448,7 +449,8 @@ export class TerminalManager {
         paneId,
         "#{pane_dead_status}",
       ]);
-      exitCode = parseInt(exitCodeStr, 10);
+      const parsed = parseInt(exitCodeStr, 10);
+      exitCode = Number.isFinite(parsed) ? parsed : null;
     }
 
     return {
