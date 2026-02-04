@@ -783,7 +783,7 @@ function waitForSignal<T>(
     async () => {
       const cwd = tmpCwd();
 
-      execSync("git init", { cwd, stdio: "pipe" });
+      execSync("git init -b main", { cwd, stdio: "pipe" });
       execSync("git config user.email 'test@test.com'", {
         cwd,
         stdio: "pipe",

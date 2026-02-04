@@ -168,7 +168,7 @@ describe("daemon E2E", () => {
 
         // Initialize git repo with clean state
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd, stdio: "pipe" });
+        execSync("git init -b main", { cwd, stdio: "pipe" });
         execSync("git config user.email 'test@test.com'", { cwd, stdio: "pipe" });
         execSync("git config user.name 'Test'", { cwd, stdio: "pipe" });
 
@@ -242,7 +242,7 @@ describe("daemon E2E", () => {
 
         // Initialize git repo
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd, stdio: "pipe" });
+        execSync("git init -b main", { cwd, stdio: "pipe" });
         execSync("git config user.email 'test@test.com'", { cwd, stdio: "pipe" });
         execSync("git config user.name 'Test'", { cwd, stdio: "pipe" });
 
@@ -293,7 +293,7 @@ describe("daemon E2E", () => {
 
         // Initialize git repo with clean state
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd, stdio: "pipe" });
+        execSync("git init -b main", { cwd, stdio: "pipe" });
         execSync("git config user.email 'test@test.com'", { cwd, stdio: "pipe" });
         execSync("git config user.name 'Test'", { cwd, stdio: "pipe" });
 
@@ -365,7 +365,7 @@ describe("daemon E2E", () => {
         const repoRoot = tmpCwd();
 
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd: repoRoot, stdio: "pipe" });
+        execSync("git init -b main", { cwd: repoRoot, stdio: "pipe" });
         execSync("git config user.email 'test@test.com'", {
           cwd: repoRoot,
           stdio: "pipe",
@@ -439,7 +439,7 @@ describe("daemon E2E", () => {
         const repoRoot = tmpCwd();
 
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd: repoRoot, stdio: "pipe" });
+        execSync("git init -b main", { cwd: repoRoot, stdio: "pipe" });
         execSync("git config user.email 'test@test.com'", {
           cwd: repoRoot,
           stdio: "pipe",
@@ -526,7 +526,7 @@ describe("daemon E2E", () => {
         const cwd = tmpCwd();
 
         const { execSync } = await import("child_process");
-        execSync("git init", { cwd, stdio: "pipe" });
+        execSync("git init -b main", { cwd, stdio: "pipe" });
         execSync("git config user.email 'test@test.com'", { cwd, stdio: "pipe" });
         execSync("git config user.name 'Test'", { cwd, stdio: "pipe" });
 

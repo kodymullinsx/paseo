@@ -80,7 +80,7 @@ describe("checkout git utilities", () => {
 
   it("exposes hasRemote when origin is configured", async () => {
     const remoteDir = join(tempDir, "remote.git");
-    execSync(`git init --bare ${remoteDir}`);
+    execSync(`git init --bare -b main ${remoteDir}`);
     execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir });
 
     const status = await getCheckoutStatus(repoDir);
@@ -232,7 +232,7 @@ describe("checkout git utilities", () => {
 
   it("merges from the most-ahead base ref (origin/main when it is ahead)", async () => {
     const remoteDir = join(tempDir, "remote.git");
-    execSync(`git init --bare ${remoteDir}`);
+    execSync(`git init --bare -b main ${remoteDir}`);
     execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir });
     execSync("git push -u origin main", { cwd: repoDir });
 
@@ -262,7 +262,7 @@ describe("checkout git utilities", () => {
 
   it("merges from the most-ahead base ref (local main when it is ahead)", async () => {
     const remoteDir = join(tempDir, "remote.git");
-    execSync(`git init --bare ${remoteDir}`);
+    execSync(`git init --bare -b main ${remoteDir}`);
     execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir });
     execSync("git push -u origin main", { cwd: repoDir });
 
@@ -312,7 +312,7 @@ describe("checkout git utilities", () => {
 
   it("pushes the current branch to origin", async () => {
     const remoteDir = join(tempDir, "remote.git");
-    execSync(`git init --bare ${remoteDir}`);
+    execSync(`git init --bare -b main ${remoteDir}`);
     execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir });
     execSync("git push -u origin main", { cwd: repoDir });
 

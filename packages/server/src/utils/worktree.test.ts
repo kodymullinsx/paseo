@@ -25,7 +25,7 @@ describe("createWorktree", () => {
 
     // Create a git repo with an initial commit
     execSync(`mkdir -p ${repoDir}`);
-    execSync("git init", { cwd: repoDir });
+    execSync("git init -b main", { cwd: repoDir });
     execSync("git config user.email 'test@test.com'", { cwd: repoDir });
     execSync("git config user.name 'Test'", { cwd: repoDir });
     execSync("echo 'hello' > file.txt", { cwd: repoDir });
@@ -265,7 +265,7 @@ describe("paseo worktree manager", () => {
     paseoHome = join(tempDir, "paseo-home");
 
     execSync(`mkdir -p ${repoDir}`);
-    execSync("git init", { cwd: repoDir });
+    execSync("git init -b main", { cwd: repoDir });
     execSync("git config user.email 'test@test.com'", { cwd: repoDir });
     execSync("git config user.name 'Test'", { cwd: repoDir });
     execSync("echo 'hello' > file.txt", { cwd: repoDir });

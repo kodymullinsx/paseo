@@ -266,7 +266,7 @@ describe("daemon checkout ship loop", () => {
 				initGitRepo(repoDir);
 
 				const remoteDir = path.join(repoDir, "remote.git");
-				execSync(`git init --bare ${remoteDir}`, { stdio: "pipe" });
+				execSync(`git init --bare -b main ${remoteDir}`, { stdio: "pipe" });
 				execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, stdio: "pipe" });
 				execSync("git push -u origin main", { cwd: repoDir, stdio: "pipe" });
 
