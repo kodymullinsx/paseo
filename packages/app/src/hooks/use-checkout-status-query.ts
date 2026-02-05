@@ -42,6 +42,7 @@ export function useCheckoutStatusQuery({ serverId, cwd }: UseCheckoutStatusQuery
   const desktopFileExplorerOpen = usePanelStore((state) => state.desktop.fileExplorerOpen);
   const explorerTab = usePanelStore((state) => state.explorerTab);
   const isOpen = isMobile ? mobileView === "file-explorer" : desktopFileExplorerOpen;
+  const shouldPoll = isOpen && explorerTab === "changes";
 
   const query = useQuery({
     queryKey: checkoutStatusQueryKey(serverId, cwd),
@@ -53,8 +54,12 @@ export function useCheckoutStatusQuery({ serverId, cwd }: UseCheckoutStatusQuery
     },
     enabled: !!client && isConnected && !!cwd,
     staleTime: CHECKOUT_STATUS_STALE_TIME,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: (query) => {
+      if (!shouldPoll) return false;
+      const data = query.state.data as CheckoutStatusPayload | undefined;
+      return data?.isGit ? 10_000 : false;
+    },
+    refetchIntervalInBackground: shouldPoll,
     refetchOnMount: "always",
   });
 

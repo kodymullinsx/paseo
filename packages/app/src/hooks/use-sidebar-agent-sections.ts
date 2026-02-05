@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
 import {
   checkoutStatusQueryKey,
   type CheckoutStatusPayload,
+  CHECKOUT_STATUS_STALE_TIME,
 } from "@/hooks/use-checkout-status-query";
 import { groupAgents } from "@/utils/agent-grouping";
 import { useSectionOrderStore, sortProjectsByStoredOrder } from "@/stores/section-order-store";
@@ -22,32 +23,31 @@ export interface SidebarSectionData {
 }
 
 export function useSidebarAgentSections(agents: AggregatedAgent[]): SidebarSectionData[] {
-  const queryClient = useQueryClient();
-  const [checkoutCacheBump, setCheckoutCacheBump] = useState(0);
-
-  // Re-render when checkout status cache updates so grouping can switch from cwd→remote.
-  useEffect(() => {
-    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-      const queryKey = event?.query?.queryKey;
-      if (!Array.isArray(queryKey) || queryKey[0] !== "checkoutStatus") {
-        return;
-      }
-      setCheckoutCacheBump((v) => v + 1);
-    });
-    return unsubscribe;
-  }, [queryClient]);
+  // Subscribe to checkout status cache entries for each visible agent so that grouping
+  // can switch from cwd→remote as soon as checkout status is prefetched.
+  //
+  // This avoids a brief UI state where two separate sections can render with the
+  // same icon/title while grouping is still keyed by cwd.
+  const checkoutStatusQueries = useQueries({
+    queries: agents.map((agent) => ({
+      queryKey: checkoutStatusQueryKey(agent.serverId, agent.cwd),
+      queryFn: async (): Promise<CheckoutStatusPayload> => {
+        throw new Error("Checkout status query is disabled in sidebar grouping");
+      },
+      enabled: false,
+      staleTime: CHECKOUT_STATUS_STALE_TIME,
+    })),
+  });
 
   const remoteUrlByAgentKey = useMemo(() => {
     const result = new Map<string, string | null>();
-    for (const agent of agents) {
-      const checkout =
-        queryClient.getQueryData<CheckoutStatusPayload>(
-          checkoutStatusQueryKey(agent.serverId, agent.cwd)
-        ) ?? null;
+    for (let idx = 0; idx < agents.length; idx++) {
+      const agent = agents[idx];
+      const checkout = checkoutStatusQueries[idx]?.data ?? null;
       result.set(`${agent.serverId}:${agent.id}`, checkout?.remoteUrl ?? null);
     }
     return result;
-  }, [agents, checkoutCacheBump, queryClient]);
+  }, [agents, checkoutStatusQueries]);
 
   const projectOrder = useSectionOrderStore((state) => state.projectOrder);
   const setProjectOrder = useSectionOrderStore((state) => state.setProjectOrder);
