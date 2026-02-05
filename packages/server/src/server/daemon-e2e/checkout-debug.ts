@@ -10,6 +10,7 @@
  */
 
 import { WebSocket } from "ws";
+import os from "node:os";
 import { DaemonClient } from "../../client/daemon-client.js";
 
 // Patch WebSocket to log all messages
@@ -28,7 +29,7 @@ class LoggingWebSocket extends OriginalWebSocket {
   }
 }
 
-const PASEO_HOME = process.env.PASEO_HOME ?? "/Users/moboudra/.paseo";
+const PASEO_HOME = process.env.PASEO_HOME ?? `${os.homedir()}/.paseo`;
 const PASEO_PORT = process.env.PASEO_PORT ?? "6767";
 const DAEMON_URL = `ws://127.0.0.1:${PASEO_PORT}/ws`;
 

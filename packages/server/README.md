@@ -70,8 +70,8 @@ See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for complete details.
 ## Environment Variables
 
 ```bash
-OPENAI_API_KEY=sk-...      # GPT-4 and TTS
-DEEPGRAM_API_KEY=...       # Streaming STT
+OPENAI_API_KEY=your-openai-key-here      # GPT-4 and TTS
+DEEPGRAM_API_KEY=your-deepgram-key-here  # Streaming STT
 STT_MODEL=whisper-1        # Optional: override to gpt-4o-transcribe, etc.
 STT_CONFIDENCE_THRESHOLD=-3.0  # Optional: reject low-confidence clips
 STT_DEBUG_AUDIO_DIR=.stt-debug # Optional: persist raw dictation audio for debugging

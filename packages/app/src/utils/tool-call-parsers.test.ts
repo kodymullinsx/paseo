@@ -68,7 +68,7 @@ describe("parseToolCallDisplay", () => {
   test("strips shell + cd wrapper from command (Codex exec_command style)", () => {
     const input = {
       command:
-        '/bin/zsh -lc "cd /Users/moboudra/dev/paseo && nl -ba packages/app/src/utils/tool-call-parsers.test.ts | sed -n \'150,260p\'"',
+        '/bin/zsh -lc "cd /Users/me/dev/paseo && nl -ba packages/app/src/utils/tool-call-parsers.test.ts | sed -n \'150,260p\'"',
     };
 
     const display: ToolCallDisplay = parseToolCallDisplay("shell", input, undefined);
@@ -206,7 +206,7 @@ describe("parseToolCallDisplay - apply_patch (Codex)", () => {
     const input = {
       files: [
         {
-          path: "/Users/moboudra/dev/blankpage/editor/.tasks/578561c8.md",
+          path: "/Users/me/dev/blankpage/editor/.tasks/578561c8.md",
           kind: "update",
         },
       ],
@@ -214,7 +214,7 @@ describe("parseToolCallDisplay - apply_patch (Codex)", () => {
     const result = {
       files: [
         {
-          path: "/Users/moboudra/dev/blankpage/editor/.tasks/578561c8.md",
+          path: "/Users/me/dev/blankpage/editor/.tasks/578561c8.md",
           patch: "@@ -15,3 +15,2 @@\n-This task defines the **design philosophy**\n+This task defines the **updated philosophy**",
           kind: "update",
         },
@@ -227,7 +227,7 @@ describe("parseToolCallDisplay - apply_patch (Codex)", () => {
     expect(display.type).toBe("edit");
     expect(display.toolName).toBe("Edit");
     if (display.type === "edit") {
-      expect(display.filePath).toBe("/Users/moboudra/dev/blankpage/editor/.tasks/578561c8.md");
+      expect(display.filePath).toBe("/Users/me/dev/blankpage/editor/.tasks/578561c8.md");
       expect(display.unifiedDiff).toBe("@@ -15,3 +15,2 @@\n-This task defines the **design philosophy**\n+This task defines the **updated philosophy**");
       expect(display.oldString).toBe("");
       expect(display.newString).toBe("");
@@ -238,7 +238,7 @@ describe("parseToolCallDisplay - apply_patch (Codex)", () => {
     const input = {
       files: [
         {
-          path: "/Users/moboudra/-paseo/worktrees/paseo/naive-zebra/packages/server/src/server/daemon-keypair.ts",
+          path: "/Users/me/.paseo/worktrees/paseo/naive-zebra/packages/server/src/server/daemon-keypair.ts",
           kind: { type: "update", move_path: null },
         },
       ],
@@ -246,7 +246,7 @@ describe("parseToolCallDisplay - apply_patch (Codex)", () => {
     const result = {
       files: [
         {
-          path: "/Users/moboudra/-paseo/worktrees/paseo/naive-zebra/packages/server/src/server/daemon-keypair.ts",
+          path: "/Users/me/.paseo/worktrees/paseo/naive-zebra/packages/server/src/server/daemon-keypair.ts",
           patch: "@@ -1,1 +1,1 @@\n-foo\n+bar",
           kind: { type: "update", move_path: null },
         },
@@ -259,7 +259,7 @@ describe("parseToolCallDisplay - apply_patch (Codex)", () => {
     expect(display.toolName).toBe("Edit");
     if (display.type === "edit") {
       expect(display.filePath).toBe(
-        "/Users/moboudra/-paseo/worktrees/paseo/naive-zebra/packages/server/src/server/daemon-keypair.ts"
+        "/Users/me/.paseo/worktrees/paseo/naive-zebra/packages/server/src/server/daemon-keypair.ts"
       );
       expect(display.unifiedDiff).toBe("@@ -1,1 +1,1 @@\n-foo\n+bar");
     }
@@ -339,11 +339,11 @@ describe("parseToolCallDisplay - apply_patch (Codex)", () => {
 describe("parseToolCallDisplay - read_file (Codex)", () => {
   test("parses Codex read_file into read type", () => {
     const input = {
-      path: "/Users/moboudra/dev/blankpage/editor/.tasks/578561c8.md",
+      path: "/Users/me/dev/blankpage/editor/.tasks/578561c8.md",
     };
     const result = {
       type: "read_file",
-      path: "/Users/moboudra/dev/blankpage/editor/.tasks/578561c8.md",
+      path: "/Users/me/dev/blankpage/editor/.tasks/578561c8.md",
       content: "260  - Source: `**bold**|`\n261  - Action: `Shift+ArrowLeft`",
     };
 
@@ -351,7 +351,7 @@ describe("parseToolCallDisplay - read_file (Codex)", () => {
     expect(display.type).toBe("read");
     expect(display.toolName).toBe("Read");
     if (display.type === "read") {
-      expect(display.filePath).toBe("/Users/moboudra/dev/blankpage/editor/.tasks/578561c8.md");
+      expect(display.filePath).toBe("/Users/me/dev/blankpage/editor/.tasks/578561c8.md");
       expect(display.content).toBe("260  - Source: `**bold**|`\n261  - Action: `Shift+ArrowLeft`");
     }
   });

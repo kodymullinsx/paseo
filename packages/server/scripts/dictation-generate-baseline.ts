@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import OpenAI from "openai";
@@ -17,22 +17,20 @@ async function main(): Promise<void> {
   const __dirname = path.dirname(__filename);
   const repoRoot = path.resolve(__dirname, "..");
 
-  const fixturePath = path.resolve(
-    repoRoot,
-    "src",
-    "server",
-    "fixtures",
-    "dictation",
-    "dictation-debug-largest.wav"
-  );
-  const outPath = path.resolve(
-    repoRoot,
-    "src",
-    "server",
-    "fixtures",
-    "dictation",
-    "dictation-debug-largest.transcript.txt"
-  );
+  const defaultOutPath = path.resolve(repoRoot, "tmp", "dictation-baseline.transcript.txt");
+  const audioPath =
+    process.env.DICTATION_AUDIO_PATH ??
+    (process.argv[2] ? path.resolve(process.argv[2]) : null);
+  const outPath = path.resolve(process.env.DICTATION_OUT_PATH ?? process.argv[3] ?? defaultOutPath);
+
+  if (!audioPath) {
+    // eslint-disable-next-line no-console
+    console.error(
+      "Usage: npx tsx packages/server/scripts/dictation-generate-baseline.ts <audioPath> [outPath]\n" +
+        "  Or set DICTATION_AUDIO_PATH / DICTATION_OUT_PATH.\n"
+    );
+    process.exit(2);
+  }
 
   const apiKey = requireEnv("OPENAI_API_KEY");
   const transcriptionModel =
@@ -43,10 +41,8 @@ async function main(): Promise<void> {
 
   const openai = new OpenAI({ apiKey });
 
-  // Use a temp file path for the SDK's file stream param.
-  // We already have a fixture file, so just stream it.
   const response = await openai.audio.transcriptions.create({
-    file: await import("node:fs").then((fs) => fs.createReadStream(fixturePath)),
+    file: await import("node:fs").then((fs) => fs.createReadStream(audioPath)),
     language: "en",
     model: transcriptionModel,
     prompt,
@@ -59,8 +55,7 @@ async function main(): Promise<void> {
   await writeFile(outPath, `${response.text.trim()}\n`, "utf8");
 
   // eslint-disable-next-line no-console
-  console.log(`Wrote baseline transcript to ${outPath}`);
+  console.log(`Wrote transcript baseline to ${outPath}`);
 }
 
 await main();
-

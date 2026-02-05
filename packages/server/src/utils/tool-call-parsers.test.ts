@@ -7,12 +7,12 @@ import {
 
 describe("stripShellWrapperPrefix", () => {
   test("strips /bin/zsh -lc cd path && prefix", () => {
-    const command = "/bin/zsh -lc cd /Users/moboudra/dev/blankpage/editor && npm run format";
+    const command = "/bin/zsh -lc cd /Users/me/dev/blankpage/editor && npm run format";
     expect(stripShellWrapperPrefix(command)).toBe("npm run format");
   });
 
   test("strips /bin/zsh -lc \"cd path &&\" wrapper", () => {
-    const command = '/bin/zsh -lc "cd /Users/moboudra/dev/blankpage/editor && npm run format"';
+    const command = '/bin/zsh -lc "cd /Users/me/dev/blankpage/editor && npm run format"';
     expect(stripShellWrapperPrefix(command)).toBe("npm run format");
   });
 
