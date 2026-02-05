@@ -178,7 +178,7 @@ function GetStarted() {
         </Step>
         <Step number={2}>
           <p className="text-sm pt-0.5">
-            Open the app (or web/desktop) and connect to your daemon
+            Open the app and connect to your daemon
           </p>
         </Step>
         <Step number={3}>
@@ -260,32 +260,36 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
 
 function Story() {
   return (
-    <div className="pt-12 space-y-4 text-sm text-white/60">
-      <p>
-        I've been using Claude Code since launch. Once I realized I could check
-        on agents from my phone, I started spending a lot more time outside
-        instead of waiting at my desk. I'd SSH into Tmux from Termux on Android.
-        It worked, but the UX was rough. Dictation was bad, the keyboard was
-        awkward, and the infamous scroll bug meant starting over constantly.
-      </p>
-      <p>
-        Anthropic and OpenAI added coding agents to their mobile apps, but they
-        force you into cloud sandboxes where you lose your whole setup. I also
-        like testing different agents, so locking myself to a single harness or
-        model wasn't an option. Other apps exist but I wasn't happy with their
-        UX, security, or business model.
-      </p>
-      <p>
-        So I built my own. It became good enough that it felt obvious it should
-        exist for others too.
-      </p>
+    <div className="pt-16 space-y-4">
+      <h2 className="text-2xl font-medium">Background</h2>
+      <div className="space-y-4 text-sm text-white/60">
+        <p>
+          I've been using Claude Code since launch. Soon after, I started using
+          it on my phone while going on walks to spend less time at my desk. I'd
+          SSH into Tmux from my phone. It worked, but the UX was rough. Dictation
+          was bad, the keyboard was awkward, and the infamous flicker bug meant
+          starting over constantly.
+        </p>
+        <p>
+          I started building a simple app to manage agents via voice. I continued
+          adding features as I needed them, and slowly ended up building what
+          Paseo is today.
+        </p>
+        <p>
+          Anthropic and OpenAI added coding agents to their mobile apps since I
+          started working on this, but they force you into cloud sandboxes where
+          you lose your whole setup. I also like testing different agents, so
+          locking myself to a single harness or model wasn't an option. Other apps
+          exist but I wasn't happy with their UX, security, or business model.
+        </p>
+      </div>
     </div>
   )
 }
 
 function FAQ() {
   return (
-    <div className="pt-12 space-y-6">
+    <div className="pt-16 space-y-6">
       <h2 className="text-2xl font-medium">FAQ</h2>
       <div className="space-y-6">
         <FAQItem question="Is this free?">
@@ -303,15 +307,15 @@ function FAQ() {
         <FAQItem question="What agents does it support?">
           Claude Code, Codex, and OpenCode.
         </FAQItem>
-        <FAQItem question="What's the business model?">
-          There isn't one. The app and server are free and open source, and
-          that's not changing. I built this for myself.
-        </FAQItem>
+        <FAQItem question="What's the business model?">There isn't one.</FAQItem>
         <FAQItem question="Isn't this just more screen time?">
           I won't pretend this can't be misused. But for me it means less time
           at my desk, not more. I brainstorm whole features with voice. I kick
           off work at my desk, then check in from my phone during a walk. I see
           what an agent needs, send a voice reply, and put my phone away.
+        </FAQItem>
+        <FAQItem question="What does Paseo mean?">
+          Stroll, in Spanish.
         </FAQItem>
       </div>
     </div>
