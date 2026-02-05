@@ -298,7 +298,7 @@ export class DaemonClient {
 
   constructor(private config: DaemonClientConfig) {
     this.logger = config.logger ?? consoleLogger;
-    // Relay v2 requires a clientId so the daemon can create an independent
+    // Relay requires a clientId so the daemon can create an independent
     // socket + E2EE channel per connected client. Generate one per DaemonClient
     // instance (stable across reconnects in this tab/app session).
     if (isRelayClientWebSocketUrl(this.config.url)) {

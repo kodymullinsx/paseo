@@ -6,7 +6,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./e2ee": "./src/e2ee.ts",
-    "./node": "./src/node-adapter.ts",
     "./cloudflare": "./src/cloudflare-adapter.ts"
   },
   "scripts": {

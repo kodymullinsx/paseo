@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import { Buffer } from 'node:buffer';
-import { createRelayServer, type RelayServer } from '@paseo/relay/node';
 
 async function getAvailablePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -43,7 +42,7 @@ async function waitForServer(port: number, timeout = 15000): Promise<void> {
 let daemonProcess: ChildProcess | null = null;
 let metroProcess: ChildProcess | null = null;
 let paseoHome: string | null = null;
-let relayServer: RelayServer | null = null;
+let relayProcess: ChildProcess | null = null;
 
 type OfferPayload = {
   v: 2;
@@ -78,8 +77,32 @@ export default async function globalSetup() {
   const metroPort = await getAvailablePort();
   paseoHome = await mkdtemp(path.join(tmpdir(), 'paseo-e2e-home-'));
 
-  relayServer = createRelayServer({ port: relayPort, host: '127.0.0.1' });
-  await relayServer.start();
+  const relayDir = path.resolve(__dirname, '..', '..', 'relay');
+  relayProcess = spawn(
+    'npx',
+    ['wrangler', 'dev', '--local', '--ip', '127.0.0.1', '--port', String(relayPort)],
+    {
+      cwd: relayDir,
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    }
+  );
+
+  relayProcess.stdout?.on('data', (data: Buffer) => {
+    const lines = data.toString().split('\n').filter((l) => l.trim());
+    for (const line of lines) {
+      console.log(`[relay] ${line}`);
+    }
+  });
+  relayProcess.stderr?.on('data', (data: Buffer) => {
+    const lines = data.toString().split('\n').filter((l) => l.trim());
+    for (const line of lines) {
+      console.error(`[relay] ${line}`);
+    }
+  });
+
+  await waitForServer(relayPort, 30000);
 
   // Start Metro bundler on dynamic port
   const appDir = path.resolve(__dirname, '..');
@@ -198,9 +221,9 @@ export default async function globalSetup() {
       metroProcess.kill('SIGTERM');
       metroProcess = null;
     }
-    if (relayServer) {
-      await relayServer.stop();
-      relayServer = null;
+    if (relayProcess) {
+      relayProcess.kill('SIGTERM');
+      relayProcess = null;
     }
     if (paseoHome) {
       await rm(paseoHome, { recursive: true, force: true });

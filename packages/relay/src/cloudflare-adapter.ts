@@ -54,11 +54,13 @@ interface DurableObjectStub {
 /**
  * Durable Object that handles WebSocket relay for a single session.
  *
- * Two WebSockets connect to this DO:
- * - role=server: The Paseo daemon
- * - role=client: The mobile/web app
+ * WebSockets connect to this DO in three shapes:
+ * - role=server (no clientId): daemon control socket (one per serverId)
+ * - role=server&clientId=...: daemon per-client data socket (one per clientId)
+ * - role=client&clientId=...: app/client socket (one per clientId)
  *
- * Messages are forwarded between them. The DO hibernates when idle.
+ * Messages are forwarded between the per-client data sockets and their matching
+ * client sockets. The DO hibernates when idle.
  */
 interface CFResponseInit extends ResponseInit {
   webSocket?: WebSocket;
@@ -139,8 +141,8 @@ export class RelayDurableObject {
       return new Response("Missing serverId parameter", { status: 400 });
     }
 
-    // v2 relay protocol: clients must provide a clientId so the daemon can create
-    // an independent E2EE channel per client connection.
+    // Clients must provide a clientId so the daemon can create an independent
+    // E2EE channel per client connection.
     if (role === "client" && !clientId) {
       return new Response("Missing clientId parameter", { status: 400 });
     }

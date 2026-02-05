@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { WebSocket } from "ws";
-import { createRelayServer, type RelayServer } from "./node-adapter.js";
+import net from "node:net";
+import { spawn, type ChildProcess } from "node:child_process";
+import { Buffer } from "node:buffer";
 import {
   generateKeyPair,
   exportPublicKey,
@@ -10,21 +12,83 @@ import {
   decrypt,
 } from "./crypto.js";
 
-const TEST_PORT = 19999;
+async function getAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => reject(new Error("Failed to acquire port")));
+        return;
+      }
+      server.close(() => resolve(address.port));
+    });
+  });
+}
+
+async function waitForServer(port: number, timeout = 15000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const socket = net.connect(port, "127.0.0.1", () => {
+          socket.end();
+          resolve();
+        });
+        socket.on("error", reject);
+      });
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+  throw new Error(`Server did not start on port ${port} within ${timeout}ms`);
+}
 
 describe("E2E Relay with E2EE", () => {
-  let relay: RelayServer;
+  let relayPort: number;
+  let relayProcess: ChildProcess | null = null;
 
   beforeAll(async () => {
-    relay = createRelayServer({ port: TEST_PORT, host: "127.0.0.1" });
-    await relay.start();
+    relayPort = await getAvailablePort();
+    relayProcess = spawn(
+      "npx",
+      ["wrangler", "dev", "--local", "--ip", "127.0.0.1", "--port", String(relayPort)],
+      {
+        cwd: process.cwd(),
+        env: { ...process.env },
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: false,
+      }
+    );
+
+    relayProcess.stdout?.on("data", (data: Buffer) => {
+      const lines = data.toString().split("\n").filter((l) => l.trim());
+      for (const line of lines) {
+        // eslint-disable-next-line no-console
+        console.log(`[relay] ${line}`);
+      }
+    });
+    relayProcess.stderr?.on("data", (data: Buffer) => {
+      const lines = data.toString().split("\n").filter((l) => l.trim());
+      for (const line of lines) {
+        // eslint-disable-next-line no-console
+        console.error(`[relay] ${line}`);
+      }
+    });
+
+    await waitForServer(relayPort, 30000);
   });
 
   afterAll(async () => {
-    await relay.stop();
+    if (relayProcess) {
+      relayProcess.kill("SIGTERM");
+      relayProcess = null;
+    }
   });
 
-  it("full flow: daemon and client exchange encrypted messages through relay", async () => {
+  it("full flow: daemon and client exchange encrypted messages through relay", { timeout: 20_000 }, async () => {
     const serverId = "test-session-" + Date.now();
     const clientId = "clt_test_" + Date.now() + "_" + Math.random().toString(36).slice(2);
 
@@ -37,7 +101,7 @@ describe("E2E Relay with E2EE", () => {
 
     // Daemon connects to relay as "server" control role
     const daemonControlWs = new WebSocket(
-      `ws://127.0.0.1:${TEST_PORT}/ws?serverId=${serverId}&role=server`
+      `ws://127.0.0.1:${relayPort}/ws?serverId=${serverId}&role=server`
     );
 
     await new Promise<void>((resolve, reject) => {
@@ -58,9 +122,41 @@ describe("E2E Relay with E2EE", () => {
       daemonPubKeyOnClient
     );
 
-    // Client connects to relay as "client" role (must include clientId in v2)
+    const waitForClientSeen = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("timed out waiting for client_connected")),
+        5000
+      );
+      const onMessage = (raw: unknown) => {
+        try {
+          const text =
+            typeof raw === "string"
+              ? raw
+              : raw && typeof (raw as any).toString === "function"
+                ? (raw as any).toString()
+                : "";
+          const msg = JSON.parse(text);
+          if (msg?.type === "client_connected" && msg.clientId === clientId) {
+            clearTimeout(timeout);
+            daemonControlWs.off("message", onMessage);
+            resolve();
+            return;
+          }
+          if (msg?.type === "sync" && Array.isArray(msg.clientIds) && msg.clientIds.includes(clientId)) {
+            clearTimeout(timeout);
+            daemonControlWs.off("message", onMessage);
+            resolve();
+          }
+        } catch {
+          // ignore
+        }
+      };
+      daemonControlWs.on("message", onMessage);
+    });
+
+    // Client connects to relay as "client" role (must include clientId)
     const clientWs = new WebSocket(
-      `ws://127.0.0.1:${TEST_PORT}/ws?serverId=${serverId}&role=client&clientId=${clientId}`
+      `ws://127.0.0.1:${relayPort}/ws?serverId=${serverId}&role=client&clientId=${clientId}`
     );
 
     await new Promise<void>((resolve, reject) => {
@@ -68,24 +164,10 @@ describe("E2E Relay with E2EE", () => {
       clientWs.on("error", reject);
     });
 
-    // Wait for relay to notify daemon control socket, then open the per-client server-data socket.
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("timed out waiting for client_connected")), 5000);
-      daemonControlWs.on("message", (raw) => {
-        try {
-          const msg = JSON.parse(raw.toString());
-          if (msg && msg.type === "client_connected" && msg.clientId === clientId) {
-            clearTimeout(timeout);
-            resolve();
-          }
-        } catch {
-          // ignore
-        }
-      });
-    });
+    await waitForClientSeen;
 
     const daemonWs = new WebSocket(
-      `ws://127.0.0.1:${TEST_PORT}/ws?serverId=${serverId}&role=server&clientId=${clientId}`
+      `ws://127.0.0.1:${relayPort}/ws?serverId=${serverId}&role=server&clientId=${clientId}`
     );
     await new Promise<void>((resolve, reject) => {
       daemonWs.on("open", resolve);
@@ -197,7 +279,7 @@ describe("E2E Relay with E2EE", () => {
     );
 
     const daemonControlWs = new WebSocket(
-      `ws://127.0.0.1:${TEST_PORT}/ws?serverId=${serverId}&role=server`
+      `ws://127.0.0.1:${relayPort}/ws?serverId=${serverId}&role=server`
     );
     await new Promise<void>((r) => daemonControlWs.on("open", r));
 
@@ -234,13 +316,13 @@ describe("E2E Relay with E2EE", () => {
     });
 
     const clientWs = new WebSocket(
-      `ws://127.0.0.1:${TEST_PORT}/ws?serverId=${serverId}&role=client&clientId=${clientId}`
+      `ws://127.0.0.1:${relayPort}/ws?serverId=${serverId}&role=client&clientId=${clientId}`
     );
     await new Promise<void>((r) => clientWs.on("open", r));
     await waitForClientSeen;
 
     const daemonWs = new WebSocket(
-      `ws://127.0.0.1:${TEST_PORT}/ws?serverId=${serverId}&role=server&clientId=${clientId}`
+      `ws://127.0.0.1:${relayPort}/ws?serverId=${serverId}&role=server&clientId=${clientId}`
     );
     await new Promise<void>((r) => daemonWs.on("open", r));
 

@@ -1,9 +1,5 @@
-export { Relay } from "./relay.js";
 export type {
   ConnectionRole,
-  RelayConnection,
-  RelayEvents,
-  RelaySession,
   RelaySessionAttachment,
 } from "./types.js";
 

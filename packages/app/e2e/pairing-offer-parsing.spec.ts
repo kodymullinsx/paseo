@@ -29,7 +29,7 @@ test('pairing flow accepts #offer=ConnectionOfferV2 and stores relay-only host',
 
   const offerUrl = `https://app.paseo.sh/#offer=${encodeBase64Url(JSON.stringify(offer))}`;
 
-  await page.getByText('+ Add host', { exact: true }).click();
+  await page.getByText('+ Add connection', { exact: true }).click();
   await page.getByText('Paste pairing link', { exact: true }).click();
 
   const input = page.getByPlaceholder('https://app.paseo.sh/#offer=...');

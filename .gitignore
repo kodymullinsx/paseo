@@ -57,3 +57,5 @@ CLAUDE.local.md
 .debug.conversations/
 .debug/
 .paseo/
+.wrangler/
+**/.wrangler/

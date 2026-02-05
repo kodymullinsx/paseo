@@ -3,10 +3,12 @@ import WebSocket from "ws";
 import pino from "pino";
 import { Writable } from "node:stream";
 import net from "node:net";
+import path from "node:path";
+import { spawn, type ChildProcess } from "node:child_process";
+import { Buffer } from "node:buffer";
 
 import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import { createClientChannel, type Transport } from "@paseo/relay/e2ee";
-import { createRelayServer } from "@paseo/relay/node";
 import { buildRelayWebSocketUrl } from "../../shared/daemon-endpoints.js";
 
 function createCapturingLogger() {
@@ -69,16 +71,74 @@ async function getAvailablePort(): Promise<number> {
   });
 }
 
+async function waitForServer(port: number, timeout = 15000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const socket = net.connect(port, "127.0.0.1", () => {
+          socket.end();
+          resolve();
+        });
+        socket.on("error", reject);
+      });
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+  throw new Error(`Server did not start on port ${port} within ${timeout}ms`);
+}
+
 describe("Relay transport (E2EE) - daemon E2E", () => {
+  let relayPort: number;
+  let relayProcess: ChildProcess | null = null;
+
+  const startRelay = async () => {
+    relayPort = await getAvailablePort();
+    const relayDir = path.resolve(process.cwd(), "../relay");
+    relayProcess = spawn(
+      "npx",
+      ["wrangler", "dev", "--local", "--ip", "127.0.0.1", "--port", String(relayPort)],
+      {
+        cwd: relayDir,
+        env: { ...process.env },
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: false,
+      }
+    );
+
+    relayProcess.stdout?.on("data", (data: Buffer) => {
+      const lines = data.toString().split("\n").filter((l) => l.trim());
+      for (const line of lines) {
+        // eslint-disable-next-line no-console
+        console.log(`[relay] ${line}`);
+      }
+    });
+    relayProcess.stderr?.on("data", (data: Buffer) => {
+      const lines = data.toString().split("\n").filter((l) => l.trim());
+      for (const line of lines) {
+        // eslint-disable-next-line no-console
+        console.error(`[relay] ${line}`);
+      }
+    });
+
+    await waitForServer(relayPort, 30000);
+  };
+
+  const stopRelay = async () => {
+    if (!relayProcess) return;
+    relayProcess.kill("SIGTERM");
+    relayProcess = null;
+  };
+
   test(
     "daemon connects to relay and client ping/pong works through relay",
     async () => {
       process.env.PASEO_PRIMARY_LAN_IP = "192.168.1.12";
 
       const { logger, lines } = createCapturingLogger();
-      const relayPort = await getAvailablePort();
-      const relay = createRelayServer({ host: "127.0.0.1", port: relayPort });
-      await relay.start();
+      await startRelay();
 
       const daemon = await createTestPaseoDaemon({
         listen: "127.0.0.1",
@@ -170,7 +230,7 @@ describe("Relay transport (E2EE) - daemon E2E", () => {
         throw err;
       } finally {
         await daemon.close();
-        await relay.stop();
+        await stopRelay();
       }
     },
     30000
@@ -182,9 +242,7 @@ describe("Relay transport (E2EE) - daemon E2E", () => {
       process.env.PASEO_PRIMARY_LAN_IP = "192.168.1.12";
 
       const { logger, lines } = createCapturingLogger();
-      const relayPort = await getAvailablePort();
-      const relay = createRelayServer({ host: "127.0.0.1", port: relayPort });
-      await relay.start();
+      await startRelay();
 
       const daemon = await createTestPaseoDaemon({
         listen: "127.0.0.1",
@@ -271,7 +329,7 @@ describe("Relay transport (E2EE) - daemon E2E", () => {
         throw err;
       } finally {
         await daemon.close();
-        await relay.stop();
+        await stopRelay();
       }
     },
     45000

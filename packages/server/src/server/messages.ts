@@ -20,7 +20,7 @@ export function serializeAgentStreamEvent(
 ): AgentStreamEventPayload {
   if (event.type === "attention_required") {
     // Providers may emit attention_required without per-client notification context.
-    // The websocket bridge also emits attention_required with shouldNotify computed per client.
+    // The websocket server emits attention_required with shouldNotify computed per client.
     // Normalize provider events so they satisfy the shared schema.
     return {
       ...(event as Omit<AgentStreamEventPayload, "shouldNotify">),
