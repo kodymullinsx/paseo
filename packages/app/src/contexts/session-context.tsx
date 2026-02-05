@@ -315,6 +315,7 @@ export function SessionProvider({
   const updateSessionConnection = useSessionStore(
     (state) => state.updateSessionConnection
   );
+  const updateSessionServerInfo = useSessionStore((state) => state.updateSessionServerInfo);
 
   // Track focused agent for heartbeat
   const focusedAgentId = useSessionStore(
@@ -972,6 +973,17 @@ export function SessionProvider({
     const unsubStatus = client.on("status", (message) => {
       if (message.type !== "status") return;
       const status = message.payload.status;
+      if (status === "server_info") {
+        const payload = message.payload as any;
+        const rawServerId = typeof payload.serverId === "string" ? payload.serverId.trim() : "";
+        if (!rawServerId) return;
+        const rawHostname = typeof payload.hostname === "string" ? payload.hostname.trim() : "";
+        updateSessionServerInfo(serverId, {
+          serverId: rawServerId,
+          hostname: rawHostname.length > 0 ? rawHostname : null,
+        });
+        return;
+      }
       if (status === "agent_initialized" && "agentId" in message.payload) {
         console.log("[Session] status agent_initialized", {
           agentId: (message.payload as any).agentId,

@@ -4,8 +4,10 @@ import type { SessionState } from "@/stores/session-store";
 import { useSessionStore } from "@/stores/session-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 const VOICE_CONVERSATION_ID_STORAGE_KEY = "@paseo:voice-conversation-id";
+const KEEP_AWAKE_TAG = "paseo:voice";
 
 interface VoiceContextValue {
   isVoiceMode: boolean;
@@ -155,6 +157,9 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       try {
         realtimeSessionRef.current = session;
         setActiveServerId(serverId);
+        await activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch((error) => {
+          console.warn("[Voice] Failed to activate keep-awake:", error);
+        });
         await session.audioPlayer?.warmup?.();
         await realtimeAudio.start();
         setIsVoiceMode(true);
@@ -177,6 +182,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       } catch (error: any) {
         console.error("[Voice] Failed to start:", error);
         setActiveServerId((current) => (current === serverId ? null : current));
+        await deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
         throw error;
       }
     },
@@ -190,6 +196,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       await realtimeAudio.stop();
       setIsVoiceMode(false);
       setActiveServerId(null);
+      await deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
       console.log("[Voice] Mode disabled");
 
       if (session?.client) {
@@ -199,6 +206,7 @@ export function VoiceProvider({ children }: VoiceProviderProps) {
       }
     } catch (error: any) {
       console.error("[Voice] Failed to stop:", error);
+      await deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => undefined);
       throw error;
     }
   }, [realtimeAudio]);

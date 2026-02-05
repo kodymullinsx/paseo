@@ -4,6 +4,8 @@ import { StyleSheet, UnistylesRuntime, useUnistyles } from "react-native-unistyl
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Link } from "lucide-react-native";
 import { useDaemonRegistry, type HostProfile } from "@/contexts/daemon-registry-context";
+import { decodeOfferFragmentPayload } from "@/utils/daemon-endpoints";
+import { ConnectionOfferSchema } from "@server/shared/connection-offer";
 import { AdaptiveModalSheet } from "./adaptive-modal-sheet";
 
 const styles = StyleSheet.create((theme) => ({
@@ -66,12 +68,13 @@ const styles = StyleSheet.create((theme) => ({
 export interface PairLinkModalProps {
   visible: boolean;
   onClose: () => void;
-  onSaved?: (profile: HostProfile) => void;
+  targetServerId?: string;
+  onSaved?: (result: { profile: HostProfile; serverId: string; hostname: string | null; isNewHost: boolean }) => void;
 }
 
-export function PairLinkModal({ visible, onClose, onSaved }: PairLinkModalProps) {
+export function PairLinkModal({ visible, onClose, onSaved, targetServerId }: PairLinkModalProps) {
   const { theme } = useUnistyles();
-  const { upsertDaemonFromOfferUrl } = useDaemonRegistry();
+  const { daemons, upsertDaemonFromOfferUrl } = useDaemonRegistry();
   const isMobile =
     UnistylesRuntime.breakpoint === "xs" || UnistylesRuntime.breakpoint === "sm";
   const InputComponent = useMemo(() => (isMobile ? BottomSheetTextInput : TextInput), [isMobile]);
@@ -99,11 +102,44 @@ export function PairLinkModal({ visible, onClose, onSaved }: PairLinkModalProps)
       return;
     }
 
+    const parsedOffer = (() => {
+      try {
+        const idx = raw.indexOf("#offer=");
+        const encoded = raw.slice(idx + "#offer=".length).trim();
+        if (!encoded) {
+          throw new Error("Offer payload is empty");
+        }
+        const payload = decodeOfferFragmentPayload(encoded);
+        return ConnectionOfferSchema.parse(payload);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Invalid pairing link";
+        setErrorMessage(message);
+        if (!isMobile) {
+          Alert.alert("Pairing failed", message);
+        }
+        return null;
+      }
+    })();
+
+    if (!parsedOffer) {
+      return;
+    }
+
+    if (targetServerId && parsedOffer.serverId !== targetServerId) {
+      const message = `That pairing link belongs to ${parsedOffer.serverId}, not ${targetServerId}.`;
+      setErrorMessage(message);
+      if (!isMobile) {
+        Alert.alert("Wrong daemon", message);
+      }
+      return;
+    }
+
     try {
       setIsSaving(true);
       setErrorMessage("");
+      const isNewHost = !daemons.some((daemon) => daemon.serverId === parsedOffer.serverId);
       const profile = await upsertDaemonFromOfferUrl(raw);
-      onSaved?.(profile);
+      onSaved?.({ profile, serverId: parsedOffer.serverId, hostname: null, isNewHost });
       handleClose();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to pair host";
@@ -114,7 +150,7 @@ export function PairLinkModal({ visible, onClose, onSaved }: PairLinkModalProps)
     } finally {
       setIsSaving(false);
     }
-  }, [handleClose, isMobile, isSaving, offerUrl, onSaved, upsertDaemonFromOfferUrl]);
+  }, [daemons, handleClose, isMobile, isSaving, offerUrl, onSaved, targetServerId, upsertDaemonFromOfferUrl]);
 
   return (
     <AdaptiveModalSheet title="Paste pairing link" visible={visible} onClose={handleClose} testID="pair-link-modal">

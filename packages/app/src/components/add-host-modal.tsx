@@ -146,27 +146,25 @@ function buildConnectionFailureCopy(endpoint: string, error: unknown): { title: 
 export interface AddHostModalProps {
   visible: boolean;
   onClose: () => void;
-  onSaved?: (profile: HostProfile) => void;
+  targetServerId?: string;
+  onSaved?: (result: { profile: HostProfile; serverId: string; hostname: string | null; isNewHost: boolean }) => void;
 }
 
-export function AddHostModal({ visible, onClose, onSaved }: AddHostModalProps) {
+export function AddHostModal({ visible, onClose, onSaved, targetServerId }: AddHostModalProps) {
   const { theme } = useUnistyles();
-  const { upsertDirectConnection } = useDaemonRegistry();
+  const { daemons, upsertDirectConnection } = useDaemonRegistry();
   const isMobile =
     UnistylesRuntime.breakpoint === "xs" || UnistylesRuntime.breakpoint === "sm";
 
   const InputComponent = useMemo(() => (isMobile ? BottomSheetTextInput : TextInput), [isMobile]);
-  const labelInputRef = useRef<TextInput>(null);
   const hostInputRef = useRef<TextInput>(null);
 
-  const [label, setLabel] = useState("");
   const [endpointRaw, setEndpointRaw] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const handleClose = useCallback(() => {
     if (isSaving) return;
-    setLabel("");
     setEndpointRaw("");
     setErrorMessage("");
     onClose();
@@ -198,14 +196,23 @@ export function AddHostModal({ visible, onClose, onSaved }: AddHostModalProps) {
       setIsSaving(true);
       setErrorMessage("");
 
-      const { serverId } = await probeDaemonEndpoint(endpoint);
+      const { serverId, hostname } = await probeDaemonEndpoint(endpoint);
+      if (targetServerId && serverId !== targetServerId) {
+        const message = `That endpoint belongs to ${serverId}, not ${targetServerId}.`;
+        setErrorMessage(message);
+        if (!isMobile) {
+          Alert.alert("Wrong daemon", message);
+        }
+        return;
+      }
+
+      const isNewHost = !daemons.some((daemon) => daemon.serverId === serverId);
       const profile = await upsertDirectConnection({
         serverId,
         endpoint,
-        label: label.trim(),
       });
 
-      onSaved?.(profile);
+      onSaved?.({ profile, serverId, hostname, isNewHost });
       handleClose();
     } catch (error) {
       const { title, detail, raw } = buildConnectionFailureCopy(endpoint, error);
@@ -223,29 +230,11 @@ export function AddHostModal({ visible, onClose, onSaved }: AddHostModalProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [endpointRaw, handleClose, isMobile, isSaving, label, onSaved, upsertDirectConnection]);
+  }, [daemons, endpointRaw, handleClose, isMobile, isSaving, onSaved, targetServerId, upsertDirectConnection]);
 
   return (
     <AdaptiveModalSheet title="Direct connection" visible={visible} onClose={handleClose} testID="add-host-modal">
       <Text style={styles.helper}>Connect to a daemon by entering host:port.</Text>
-
-      <View style={styles.field}>
-        <Text style={styles.label}>Label (optional)</Text>
-        <InputComponent
-          ref={labelInputRef as any}
-          value={label}
-          onChangeText={setLabel}
-          placeholder="My Host"
-          placeholderTextColor={theme.colors.foregroundMuted}
-          style={styles.input}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isSaving}
-          returnKeyType="next"
-          blurOnSubmit={false}
-          onSubmitEditing={() => hostInputRef.current?.focus()}
-        />
-      </View>
 
       <View style={styles.field}>
         <Text style={styles.label}>Host</Text>

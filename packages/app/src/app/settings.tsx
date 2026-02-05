@@ -5,16 +5,15 @@ import {
   Text,
   ScrollView,
   TextInput,
-  Switch,
   Pressable,
   Alert,
-  ActivityIndicator,
   Platform,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, UnistylesRuntime, useUnistyles } from "react-native-unistyles";
-import { Sun, Moon, Monitor } from "lucide-react-native";
+import { Sun, Moon, Monitor, MoreVertical } from "lucide-react-native";
 import { Fonts } from "@/constants/theme";
 import { useAppSettings, type AppSettings } from "@/hooks/use-settings";
 import { useDaemonRegistry, type HostProfile } from "@/contexts/daemon-registry-context";
@@ -26,9 +25,16 @@ import { useSessionStore } from "@/stores/session-store";
 import { AddHostMethodModal } from "@/components/add-host-method-modal";
 import { AddHostModal } from "@/components/add-host-modal";
 import { PairLinkModal } from "@/components/pair-link-modal";
+import { NameHostModal } from "@/components/name-host-modal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
-import { normalizeHostPort } from "@/utils/daemon-endpoints";
-import { probeDaemonEndpoint } from "@/utils/test-daemon-connection";
 
 const delay = (ms: number) =>
   new Promise<void>((resolve) => {
@@ -110,6 +116,11 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  hostHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
   hostLabel: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
@@ -147,43 +158,18 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.semibold,
   },
-  // Host actions
-  hostActionsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    paddingVertical: theme.spacing[2],
-    paddingHorizontal: theme.spacing[4],
-    gap: theme.spacing[1],
-  },
-  hostActionButton: {
-    paddingVertical: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
+  menuButton: {
+    width: 36,
+    height: 32,
     borderRadius: theme.borderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  hostActionText: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.xs,
-    fontWeight: theme.fontWeight.semibold,
+  menuButtonPressed: {
+    backgroundColor: theme.colors.surface3,
   },
-  hostActionPrimary: {
-    backgroundColor: theme.colors.palette.blue[500],
-  },
-  hostActionPrimaryText: {
-    color: theme.colors.palette.white,
-  },
-  hostActionDestructiveText: {
-    color: theme.colors.palette.red[500],
-  },
-  hostActionDisabled: {
+  disabled: {
     opacity: theme.opacity[50],
-  },
-  hostActionSeparator: {
-    width: 1,
-    height: 16,
-    backgroundColor: theme.colors.border,
-    marginHorizontal: theme.spacing[1],
   },
   testResultText: {
     fontSize: theme.fontSize.xs,
@@ -388,6 +374,7 @@ const styles = StyleSheet.create((theme) => ({
 export default function SettingsScreen() {
   const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ editHost?: string }>();
   const { settings, isLoading: settingsLoading, updateSettings, resetSettings } = useAppSettings();
   const {
     daemons,
@@ -395,19 +382,30 @@ export default function SettingsScreen() {
     updateHost,
     removeHost,
     removeConnection,
-    upsertDirectConnection,
   } = useDaemonRegistry();
   const { connectionStates } = useDaemonConnections();
   const [isAddHostMethodVisible, setIsAddHostMethodVisible] = useState(false);
   const [isDirectHostVisible, setIsDirectHostVisible] = useState(false);
   const [isPasteLinkVisible, setIsPasteLinkVisible] = useState(false);
+  const [addConnectionTargetServerId, setAddConnectionTargetServerId] = useState<string | null>(null);
+  const [pendingEditReopenServerId, setPendingEditReopenServerId] = useState<string | null>(null);
+  const [pendingNameHost, setPendingNameHost] = useState<{ serverId: string; hostname: string | null } | null>(null);
   const [editingDaemon, setEditingDaemon] = useState<HostProfile | null>(null);
   const [editLabel, setEditLabel] = useState("");
-  const [newEndpointRaw, setNewEndpointRaw] = useState("");
-  const [isAddingConnection, setIsAddingConnection] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const isLoading = settingsLoading || daemonLoading;
   const isMountedRef = useRef(true);
+  const lastHandledEditHostRef = useRef<string | null>(null);
+  const appVersion = Constants.expoConfig?.version ?? (Constants as any).manifest?.version ?? "0.1.0";
+  const pendingNameHostname = useSessionStore(
+    useCallback(
+      (state) => {
+        if (!pendingNameHost) return null;
+        return state.sessions[pendingNameHost.serverId]?.serverInfo?.hostname ?? pendingNameHost.hostname ?? null;
+      },
+      [pendingNameHost]
+    )
+  );
 
   useEffect(() => {
     return () => {
@@ -435,15 +433,41 @@ export default function SettingsScreen() {
   const handleEditDaemon = useCallback((profile: HostProfile) => {
     setEditingDaemon(profile);
     setEditLabel(profile.label ?? "");
-    setNewEndpointRaw("");
   }, []);
 
   const handleCloseEditDaemon = useCallback(() => {
     if (isSavingEdit) return;
     setEditingDaemon(null);
     setEditLabel("");
-    setNewEndpointRaw("");
   }, [isSavingEdit]);
+
+  useEffect(() => {
+    const editHost = typeof params.editHost === "string" ? params.editHost.trim() : "";
+    if (!editHost) return;
+    if (lastHandledEditHostRef.current === editHost) return;
+    const profile = daemons.find((daemon) => daemon.serverId === editHost) ?? null;
+    if (!profile) return;
+    lastHandledEditHostRef.current = editHost;
+    handleEditDaemon(profile);
+  }, [daemons, handleEditDaemon, params.editHost]);
+
+  useEffect(() => {
+    if (!pendingEditReopenServerId) return;
+    if (isAddHostMethodVisible || isDirectHostVisible || isPasteLinkVisible) return;
+    const profile = daemons.find((daemon) => daemon.serverId === pendingEditReopenServerId) ?? null;
+    setPendingEditReopenServerId(null);
+    setAddConnectionTargetServerId(null);
+    if (profile) {
+      handleEditDaemon(profile);
+    }
+  }, [
+    daemons,
+    handleEditDaemon,
+    isAddHostMethodVisible,
+    isDirectHostVisible,
+    isPasteLinkVisible,
+    pendingEditReopenServerId,
+  ]);
 
   const handleSaveEditDaemon = useCallback(async () => {
     if (!editingDaemon) return;
@@ -473,52 +497,6 @@ export default function SettingsScreen() {
     },
     [removeConnection]
   );
-
-  const handleAddDirectConnectionToHost = useCallback(async () => {
-    if (!editingDaemon) return;
-    if (isAddingConnection) return;
-
-    const raw = newEndpointRaw.trim();
-    if (!raw) {
-      Alert.alert("Host required", "Enter host:port.");
-      return;
-    }
-    if (raw.includes("://") || raw.includes("/")) {
-      Alert.alert("Invalid host", "Enter host:port only (no ws://, no /ws).");
-      return;
-    }
-
-    let endpoint: string;
-    try {
-      endpoint = normalizeHostPort(raw);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Invalid host:port";
-      Alert.alert("Invalid host", message);
-      return;
-    }
-
-    try {
-      setIsAddingConnection(true);
-      const { serverId } = await probeDaemonEndpoint(endpoint, { timeoutMs: 6000 });
-      if (serverId !== editingDaemon.serverId) {
-        Alert.alert(
-          "Wrong daemon",
-          `That endpoint belongs to ${serverId}, but this host is ${editingDaemon.serverId}.`
-        );
-        return;
-      }
-      await upsertDirectConnection({
-        serverId,
-        endpoint,
-      });
-      setNewEndpointRaw("");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to add connection";
-      Alert.alert("Connection failed", message);
-    } finally {
-      setIsAddingConnection(false);
-    }
-  }, [editingDaemon, isAddingConnection, newEndpointRaw, upsertDirectConnection]);
 
   const handleRemoveDaemon = useCallback(
     (profile: HostProfile) => {
@@ -558,20 +536,6 @@ export default function SettingsScreen() {
       );
     },
     [removeHost]
-  );
-
-  const handleToggleUseSpeaker = useCallback(
-    (value: boolean) => {
-      void updateSettings({ ...settings, useSpeaker: value });
-    },
-    [settings, updateSettings]
-  );
-
-  const handleToggleKeepScreenOn = useCallback(
-    (value: boolean) => {
-      void updateSettings({ ...settings, keepScreenOn: value });
-    },
-    [settings, updateSettings]
   );
 
   const handleThemeChange = useCallback(
@@ -616,7 +580,7 @@ export default function SettingsScreen() {
   }
 
   const restartConfirmationMessage =
-    "This will immediately stop the Voice Dev backend process. The app will disconnect until it restarts.";
+    "This will immediately stop the Paseo daemon process. The app will disconnect until it restarts.";
 
   if (isLoading) {
     return (
@@ -665,7 +629,11 @@ export default function SettingsScreen() {
 
             <Pressable
               style={styles.addButton}
-              onPress={() => setIsAddHostMethodVisible(true)}
+              onPress={() => {
+                setAddConnectionTargetServerId(null);
+                setPendingEditReopenServerId(null);
+                setIsAddHostMethodVisible(true);
+              }}
             >
               <Text style={styles.addButtonText}>+ Add connection</Text>
             </Pressable>
@@ -676,24 +644,49 @@ export default function SettingsScreen() {
             onClose={() => setIsAddHostMethodVisible(false)}
             onDirectConnection={() => setIsDirectHostVisible(true)}
             onPasteLink={() => setIsPasteLinkVisible(true)}
-            onScanQr={() => router.push("/pair-scan")}
+            onScanQr={() => {
+              const target = addConnectionTargetServerId;
+              const source = target ? "editHost" : "settings";
+              const qs = target ? `?source=${source}&targetServerId=${encodeURIComponent(target)}` : `?source=${source}`;
+              router.push(`/pair-scan${qs}`);
+            }}
           />
 
           <AddHostModal
             visible={isDirectHostVisible}
+            targetServerId={addConnectionTargetServerId ?? undefined}
             onClose={() => setIsDirectHostVisible(false)}
-            onSaved={(profile) => {
-              router.replace({ pathname: "/", params: { serverId: profile.serverId } });
+            onSaved={({ serverId, hostname, isNewHost }) => {
+              if (isNewHost) {
+                setPendingNameHost({ serverId, hostname });
+              }
             }}
           />
 
           <PairLinkModal
             visible={isPasteLinkVisible}
+            targetServerId={addConnectionTargetServerId ?? undefined}
             onClose={() => setIsPasteLinkVisible(false)}
-            onSaved={(profile) => {
-              router.replace({ pathname: "/", params: { serverId: profile.serverId } });
+            onSaved={({ serverId, hostname, isNewHost }) => {
+              if (isNewHost) {
+                setPendingNameHost({ serverId, hostname });
+              }
             }}
           />
+
+          {pendingNameHost ? (
+            <NameHostModal
+              visible
+              serverId={pendingNameHost.serverId}
+              hostname={pendingNameHostname}
+              onSkip={() => setPendingNameHost(null)}
+              onSave={(label) => {
+                void updateHost(pendingNameHost.serverId, { label }).finally(() => {
+                  setPendingNameHost(null);
+                });
+              }}
+            />
+          ) : null}
 
           <AdaptiveModalSheet
             title="Edit host"
@@ -756,28 +749,19 @@ export default function SettingsScreen() {
 
             {editingDaemon ? (
               <View style={styles.formField}>
-                <Text style={styles.label}>Add direct connection</Text>
-                <TextInput
-                  style={[styles.input, styles.inputUrl]}
-                  value={newEndpointRaw}
-                  onChangeText={setNewEndpointRaw}
-                  placeholder="192.168.1.10:6767"
-                  placeholderTextColor={defaultTheme.colors.mutedForeground}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
                 <Pressable
-                  style={[
-                    styles.formButton,
-                    styles.formButtonPrimary,
-                    (isAddingConnection || !newEndpointRaw.trim()) && styles.hostActionDisabled,
-                    { alignSelf: "flex-end" },
-                  ]}
-                  onPress={() => void handleAddDirectConnectionToHost()}
-                  disabled={isAddingConnection || !newEndpointRaw.trim()}
+                  style={[styles.formButton, styles.formButtonPrimary, { alignSelf: "flex-start" }]}
+                  onPress={() => {
+                    const serverId = editingDaemon.serverId;
+                    handleCloseEditDaemon();
+                    setAddConnectionTargetServerId(serverId);
+                    setPendingEditReopenServerId(serverId);
+                    setIsAddHostMethodVisible(true);
+                  }}
+                  testID="edit-host-add-connection"
                 >
                   <Text style={[styles.formButtonText, styles.formButtonPrimaryText]}>
-                    {isAddingConnection ? "Adding..." : "Add"}
+                    Add connection
                   </Text>
                 </Pressable>
               </View>
@@ -785,14 +769,14 @@ export default function SettingsScreen() {
 
             <View style={styles.formActionsRow}>
               <Pressable
-                style={[styles.formButton, isSavingEdit && styles.hostActionDisabled]}
+                style={[styles.formButton, isSavingEdit && styles.disabled]}
                 onPress={handleCloseEditDaemon}
                 disabled={isSavingEdit}
               >
                 <Text style={styles.formButtonText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={[styles.formButton, styles.formButtonPrimary, isSavingEdit && styles.hostActionDisabled]}
+                style={[styles.formButton, styles.formButtonPrimary, isSavingEdit && styles.disabled]}
                 onPress={() => void handleSaveEditDaemon()}
                 disabled={isSavingEdit}
               >
@@ -846,66 +830,11 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          {/* Audio Settings */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Audio</Text>
-
-            <View style={styles.audioCard}>
-              <View style={styles.audioRow}>
-                <View style={styles.audioRowContent}>
-                  <Text style={styles.audioRowTitle}>Use speaker</Text>
-                  <Text style={styles.audioRowDescription}>
-                    Play audio through speaker instead of earpiece
-                  </Text>
-                </View>
-                <Switch
-                  value={settings.useSpeaker}
-                  onValueChange={handleToggleUseSpeaker}
-                  trackColor={{ false: defaultTheme.colors.palette.gray[700], true: defaultTheme.colors.palette.blue[500] }}
-                  thumbColor={settings.useSpeaker ? defaultTheme.colors.palette.white : defaultTheme.colors.palette.gray[300]}
-                />
-              </View>
-
-              <View style={[styles.audioRow, styles.audioRowBorder]}>
-                <View style={styles.audioRowContent}>
-                  <Text style={styles.audioRowTitle}>Keep screen on</Text>
-                  <Text style={styles.audioRowDescription}>
-                    Prevent screen from sleeping during voice sessions
-                  </Text>
-                </View>
-                <Switch
-                  value={settings.keepScreenOn}
-                  onValueChange={handleToggleKeepScreenOn}
-                  trackColor={{ false: defaultTheme.colors.palette.gray[700], true: defaultTheme.colors.palette.blue[500] }}
-                  thumbColor={settings.keepScreenOn ? defaultTheme.colors.palette.white : defaultTheme.colors.palette.gray[300]}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Developer */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Developer</Text>
-            <View style={styles.devCard}>
-              <Pressable
-                style={styles.devButton}
-                onPress={() => router.push("/audio-test")}
-              >
-                <View style={styles.devButtonContent}>
-                  <Text style={styles.devButtonTitle}>Audio test</Text>
-                  <Text style={styles.devButtonDescription}>
-                    Test audio recording and playback
-                  </Text>
-                </View>
-              </Pressable>
-            </View>
-          </View>
-
           {/* Footer */}
           <View style={styles.footer}>
             <View style={styles.footerAppInfo}>
-              <Text style={styles.footerText}>Voice Dev Mobile</Text>
-              <Text style={styles.footerVersion}>Version 1.0.0</Text>
+              <Text style={styles.footerText}>Paseo</Text>
+              <Text style={styles.footerVersion}>Version {appVersion}</Text>
             </View>
             <Pressable style={styles.resetButton} onPress={handleReset}>
               <Text style={styles.resetButtonText}>Reset to defaults</Text>
@@ -1080,9 +1009,45 @@ function DaemonCard({
       <View style={styles.hostCardContent}>
         <View style={styles.hostHeaderRow}>
           <Text style={styles.hostLabel}>{daemon.label}</Text>
-          <View style={[styles.statusPill, { backgroundColor: statusPillBg }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusText, { color: statusColor }]}>{badgeText}</Text>
+          <View style={styles.hostHeaderRight}>
+            <View style={[styles.statusPill, { backgroundColor: statusPillBg }]}>
+              <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.statusText, { color: statusColor }]}>{badgeText}</Text>
+            </View>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                testID={`daemon-menu-trigger-${daemon.serverId}`}
+                style={({ pressed }) => [
+                  styles.menuButton,
+                  pressed ? styles.menuButtonPressed : null,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Host actions for ${daemon.label}`}
+              >
+                <MoreVertical size={16} color={theme.colors.foregroundMuted} />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" width={220} testID={`daemon-menu-content-${daemon.serverId}`}>
+                <DropdownMenuItem onSelect={() => onEdit(daemon)} testID={`daemon-menu-edit-${daemon.serverId}`}>
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem destructive onSelect={() => onRemove(daemon)} testID={`daemon-menu-remove-${daemon.serverId}`}>
+                  Remove
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Advanced</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onSelect={handleRestartPress}
+                  status={isRestarting ? "pending" : "idle"}
+                  pendingLabel="Restarting..."
+                  disabled={!daemonClient || !isConnectedRef.current}
+                  testID={`daemon-menu-restart-${daemon.serverId}`}
+                >
+                  Restart daemon
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </View>
         </View>
         <Text style={styles.hostUrl}>
@@ -1112,26 +1077,6 @@ function DaemonCard({
         </Text>
         {connectionsSummary ? <Text style={styles.hostConnections}>{connectionsSummary}</Text> : null}
         {connectionError ? <Text style={styles.hostError}>{connectionError}</Text> : null}
-      </View>
-      <View style={styles.hostActionsRow}>
-        <Pressable
-          style={[styles.hostActionButton, isRestarting && styles.hostActionDisabled]}
-          onPress={handleRestartPress}
-          disabled={isRestarting}
-        >
-          {isRestarting ? (
-            <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
-          ) : (
-            <Text style={styles.hostActionText}>Restart</Text>
-          )}
-        </Pressable>
-        <Pressable style={styles.hostActionButton} onPress={() => onEdit(daemon)}>
-          <Text style={styles.hostActionText}>Edit</Text>
-        </Pressable>
-        <View style={styles.hostActionSeparator} />
-        <Pressable style={styles.hostActionButton} onPress={() => onRemove(daemon)}>
-          <Text style={[styles.hostActionText, styles.hostActionDestructiveText]}>Remove</Text>
-        </Pressable>
       </View>
     </View>
   );

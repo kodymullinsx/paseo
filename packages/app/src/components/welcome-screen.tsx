@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Image, Pressable, Text, View, Platform, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { QrCode, Link2, ClipboardPaste } from "lucide-react-native";
 import type { HostProfile } from "@/contexts/daemon-registry-context";
+import { useDaemonRegistry } from "@/contexts/daemon-registry-context";
+import { useSessionStore } from "@/stores/session-store";
 import { AddHostModal } from "./add-host-modal";
 import { PairLinkModal } from "./pair-link-modal";
+import { NameHostModal } from "./name-host-modal";
 
 const styles = StyleSheet.create((theme) => ({
   container: {
@@ -70,8 +73,27 @@ export interface WelcomeScreenProps {
 export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
   const { theme } = useUnistyles();
   const router = useRouter();
+  const { updateHost } = useDaemonRegistry();
   const [isDirectOpen, setIsDirectOpen] = useState(false);
   const [isPasteLinkOpen, setIsPasteLinkOpen] = useState(false);
+  const [pendingNameHost, setPendingNameHost] = useState<{ serverId: string; hostname: string | null } | null>(null);
+  const [pendingRedirectServerId, setPendingRedirectServerId] = useState<string | null>(null);
+  const pendingNameHostname = useSessionStore(
+    useCallback(
+      (state) => {
+        if (!pendingNameHost) return null;
+        return state.sessions[pendingNameHost.serverId]?.serverInfo?.hostname ?? pendingNameHost.hostname ?? null;
+      },
+      [pendingNameHost]
+    )
+  );
+
+  const finishOnboarding = useCallback(
+    (serverId: string) => {
+      router.replace({ pathname: "/", params: { serverId } });
+    },
+    [router]
+  );
 
   return (
     <ScrollView
@@ -110,7 +132,7 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
         {Platform.OS !== "web" ? (
           <Pressable
             style={styles.actionButton}
-            onPress={() => router.push("/pair-scan")}
+            onPress={() => router.push("/pair-scan?source=onboarding")}
             testID="welcome-scan-qr"
           >
             <QrCode size={18} color={theme.colors.foreground} />
@@ -122,20 +144,52 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
       <AddHostModal
         visible={isDirectOpen}
         onClose={() => setIsDirectOpen(false)}
-        onSaved={(profile) => {
+        onSaved={({ profile, serverId, hostname, isNewHost }) => {
           onHostAdded?.(profile);
-          router.replace({ pathname: "/", params: { serverId: profile.serverId } });
+          setPendingRedirectServerId(serverId);
+          if (isNewHost) {
+            setPendingNameHost({ serverId, hostname });
+            return;
+          }
+          finishOnboarding(serverId);
         }}
       />
 
       <PairLinkModal
         visible={isPasteLinkOpen}
         onClose={() => setIsPasteLinkOpen(false)}
-        onSaved={(profile) => {
+        onSaved={({ profile, serverId, hostname, isNewHost }) => {
           onHostAdded?.(profile);
-          router.replace({ pathname: "/", params: { serverId: profile.serverId } });
+          setPendingRedirectServerId(serverId);
+          if (isNewHost) {
+            setPendingNameHost({ serverId, hostname });
+            return;
+          }
+          finishOnboarding(serverId);
         }}
       />
+
+      {pendingNameHost && pendingRedirectServerId ? (
+        <NameHostModal
+          visible
+          serverId={pendingNameHost.serverId}
+          hostname={pendingNameHostname}
+          onSkip={() => {
+            const serverId = pendingRedirectServerId;
+            setPendingNameHost(null);
+            setPendingRedirectServerId(null);
+            finishOnboarding(serverId);
+          }}
+          onSave={(label) => {
+            const serverId = pendingRedirectServerId;
+            void updateHost(pendingNameHost.serverId, { label }).finally(() => {
+              setPendingNameHost(null);
+              setPendingRedirectServerId(null);
+              finishOnboarding(serverId);
+            });
+          }}
+        />
+      ) : null}
     </ScrollView>
   );
 }
