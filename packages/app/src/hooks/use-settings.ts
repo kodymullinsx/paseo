@@ -7,14 +7,10 @@ const LEGACY_SETTINGS_KEY = "@paseo:settings";
 const APP_SETTINGS_QUERY_KEY = ["app-settings"];
 
 export interface AppSettings {
-  useSpeaker: boolean;
-  keepScreenOn: boolean;
   theme: "dark" | "light" | "auto";
 }
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
-  useSpeaker: true,
-  keepScreenOn: true,
   theme: "dark",
 };
 
@@ -99,12 +95,6 @@ async function loadSettingsFromStorage(): Promise<AppSettings> {
 
 function pickAppSettingsFromLegacy(legacy: Record<string, unknown>): Partial<AppSettings> {
   const result: Partial<AppSettings> = {};
-  if (typeof legacy.useSpeaker === "boolean") {
-    result.useSpeaker = legacy.useSpeaker;
-  }
-  if (typeof legacy.keepScreenOn === "boolean") {
-    result.keepScreenOn = legacy.keepScreenOn;
-  }
   if (legacy.theme === "dark" || legacy.theme === "light" || legacy.theme === "auto") {
     result.theme = legacy.theme;
   }

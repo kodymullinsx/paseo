@@ -425,7 +425,6 @@ export default function RootLayout() {
                                   options={{ gestureEnabled: false }}
                                 />
                                 <Stack.Screen name="settings" />
-                                <Stack.Screen name="audio-test" />
                                 <Stack.Screen name="pair-scan" />
                               </Stack>
                             </AppWithSidebar>

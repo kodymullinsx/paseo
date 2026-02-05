@@ -146,6 +146,11 @@ export interface DaemonConnectionSnapshot {
   lastError: string | null;
 }
 
+export type DaemonServerInfo = {
+  serverId: string;
+  hostname: string | null;
+};
+
 // Per-session state
 export interface SessionState {
   serverId: string;
@@ -155,6 +160,9 @@ export interface SessionState {
 
   // Connection snapshot (mutable)
   connection: DaemonConnectionSnapshot;
+
+  // Server metadata (from server_info handshake)
+  serverInfo: DaemonServerInfo | null;
 
   // Audio player (immutable reference)
   audioPlayer: ReturnType<typeof useAudioPlayer> | null;
@@ -211,6 +219,7 @@ interface SessionStoreActions {
   getSession: (serverId: string) => SessionState | undefined;
   updateSessionClient: (serverId: string, client: DaemonClient) => void;
   updateSessionConnection: (serverId: string, connection: DaemonConnectionSnapshot) => void;
+  updateSessionServerInfo: (serverId: string, info: DaemonServerInfo) => void;
 
   // Audio state
   setIsPlayingAudio: (serverId: string, playing: boolean) => void;
@@ -299,6 +308,7 @@ function createInitialSessionState(serverId: string, client: DaemonClient, audio
     serverId,
     client,
     connection: createDefaultConnectionSnapshot(client),
+    serverInfo: null,
     audioPlayer,
     hasHydratedAgents: false,
     isPlayingAudio: false,
@@ -402,6 +412,38 @@ export const useSessionStore = create<SessionStore>()(
             [serverId]: {
               ...session,
               connection,
+            },
+          },
+        };
+      });
+    },
+
+    updateSessionServerInfo: (serverId, info) => {
+      set((prev) => {
+        const session = prev.sessions[serverId];
+        if (!session) {
+          return prev;
+        }
+
+        const nextHostname = info.hostname?.trim() || null;
+        const prevHostname = session.serverInfo?.hostname?.trim() || null;
+
+        if (session.serverInfo?.serverId === info.serverId && prevHostname === nextHostname) {
+          return prev;
+        }
+
+        logSessionStoreUpdate("updateSessionServerInfo", serverId, {
+          serverId: info.serverId,
+          hostname: nextHostname,
+        });
+
+        return {
+          ...prev,
+          sessions: {
+            ...prev.sessions,
+            [serverId]: {
+              ...session,
+              serverInfo: { serverId: info.serverId, hostname: nextHostname },
             },
           },
         };

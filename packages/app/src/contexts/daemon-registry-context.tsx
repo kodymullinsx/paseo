@@ -4,7 +4,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   decodeOfferFragmentPayload,
-  deriveLabelFromEndpoint,
   normalizeHostPort,
 } from "@/utils/daemon-endpoints";
 import {
@@ -163,11 +162,7 @@ export function DaemonRegistryProvider({ children }: { children: ReactNode }) {
       }
 
       const labelTrimmed = input.label?.trim() ?? "";
-      const derivedLabel =
-        labelTrimmed ||
-        (input.connection.type === "direct"
-          ? deriveLabelFromEndpoint(input.connection.endpoint)
-          : serverId);
+      const derivedLabel = labelTrimmed || serverId;
 
       const idx = existing.findIndex((d) => d.serverId === serverId);
       if (idx === -1) {
@@ -252,7 +247,6 @@ export function DaemonRegistryProvider({ children }: { children: ReactNode }) {
         serverId: offer.serverId,
         relayEndpoint: offer.relay.endpoint,
         daemonPublicKeyB64: offer.daemonPublicKeyB64,
-        label: offer.serverId,
       });
     },
     [upsertRelayConnection]

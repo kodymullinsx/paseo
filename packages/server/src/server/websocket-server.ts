@@ -2,6 +2,7 @@ import { WebSocketServer } from "ws";
 import type { Server as HTTPServer } from "http";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { join } from "path";
+import { hostname as getHostname } from "node:os";
 import type { AgentManager } from "./agent/agent-manager.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
@@ -238,6 +239,7 @@ export class VoiceAssistantWebSocketServer {
         payload: {
           status: "server_info",
           serverId: this.serverId,
+          hostname: getHostname(),
         },
       })
     );
