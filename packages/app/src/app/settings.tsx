@@ -637,14 +637,16 @@ export default function SettingsScreen() {
               setIsAddHostMethodVisible(false);
               setIsPasteLinkVisible(true);
             }}
-            onScanQr={() => {
-              const target = addConnectionTargetServerId;
-              const source = target ? "editHost" : "settings";
-              const qs = target ? `?source=${source}&targetServerId=${encodeURIComponent(target)}` : `?source=${source}`;
-              closeAddConnectionFlow();
-              router.push(`/pair-scan${qs}`);
-            }}
-          />
+	            onScanQr={() => {
+	              const targetServerId = addConnectionTargetServerId;
+	              const source = targetServerId ? "editHost" : "settings";
+	              closeAddConnectionFlow();
+	              router.push({
+	                pathname: "/pair-scan",
+	                params: targetServerId ? { source, targetServerId } : { source },
+	              });
+	            }}
+	          />
 
           <AddHostModal
             visible={isDirectHostVisible}
