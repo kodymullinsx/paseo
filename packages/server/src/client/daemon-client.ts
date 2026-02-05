@@ -389,6 +389,15 @@ export class DaemonClient {
             clearTimeout(this.pendingGenericTransportErrorTimeout);
             this.pendingGenericTransportErrorTimeout = null;
           }
+          const closeRecord = event as { code?: unknown; reason?: unknown } | null;
+          const closeCode =
+            closeRecord && typeof closeRecord === "object" && typeof closeRecord.code === "number"
+              ? closeRecord.code
+              : null;
+          const closeReason =
+            closeRecord && typeof closeRecord === "object" && typeof closeRecord.reason === "string"
+              ? closeRecord.reason
+              : null;
           const reason = describeTransportClose(event);
           if (reason) {
             this.lastErrorValue = reason;
@@ -397,6 +406,21 @@ export class DaemonClient {
             status: "disconnected",
             ...(reason ? { reason } : {}),
           });
+
+          // When connecting over the relay, only one client connection is allowed at a time.
+          // If another device/tab takes over, we should not auto-reconnect and "fight" the new
+          // connection (which causes flapping where both sides repeatedly replace each other).
+          if (
+            isRelayClientWebSocketUrl(this.config.url) &&
+            closeCode === 1008 &&
+            (closeReason ?? reason) === "Replaced by new connection"
+          ) {
+            this.shouldReconnect = false;
+            this.clearWaiters(new Error(reason ?? "Replaced by new connection"));
+            this.rejectPendingSendQueue(new Error(reason ?? "Replaced by new connection"));
+            this.rejectConnect(new Error(reason ?? "Replaced by new connection"));
+            return;
+          }
           this.scheduleReconnect(reason);
         }),
         transport.onError((event) => {
