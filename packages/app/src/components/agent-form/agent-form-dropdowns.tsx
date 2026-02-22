@@ -26,6 +26,11 @@ import type {
 } from "@server/server/agent/agent-sdk-types";
 import type { AgentProviderDefinition } from "@server/server/agent/provider-manifest";
 import { Combobox, ComboboxItem, ComboboxEmpty } from "@/components/ui/combobox";
+import {
+  formatModelDisplayLabel,
+  normalizeSelectedModelId,
+  resolveCatalogModelId,
+} from "@/utils/model-selection";
 
 type DropdownTriggerRenderProps = {
   label: string;
@@ -767,9 +772,18 @@ export function ModelDropdown({
 }: ModelDropdownProps): ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const anchorRef = useRef<View>(null);
+  const resolvedSelectedModelId = normalizeSelectedModelId(
+    resolveCatalogModelId(models, selectedModel)
+  );
 
-  const selectedLabel = selectedModel
-    ? models.find((model) => model.id === selectedModel)?.label ?? selectedModel
+  const selectedLabel = resolvedSelectedModelId
+    ? (() => {
+        const selected = models.find((model) => model.id === resolvedSelectedModelId);
+        if (!selected) {
+          return resolvedSelectedModelId;
+        }
+        return formatModelDisplayLabel(selected);
+      })()
     : "Automatic";
   const placeholder = isLoading && models.length === 0 ? "Loading..." : "Automatic";
   const helperText = error
@@ -791,7 +805,7 @@ export function ModelDropdown({
     for (const model of models) {
       opts.push({
         id: model.id,
-        label: model.label,
+        label: formatModelDisplayLabel(model),
         description: model.description,
       });
     }
@@ -822,10 +836,11 @@ export function ModelDropdown({
         errorMessage={error ?? undefined}
         helperText={helperText}
         controlRef={anchorRef}
+        valueEllipsizeMode="middle"
       />
       <Combobox
         options={options}
-        value={selectedModel}
+        value={resolvedSelectedModelId}
         onSelect={handleSelect}
         title="Model"
         open={isOpen}

@@ -840,6 +840,16 @@ class FakeAgentClient implements AgentClient {
         { provider: this.provider, id: "gpt-5.1-codex-mini", label: "gpt-5.1-codex-mini", isDefault: true },
       ];
     }
+    if (this.provider === "deepinfra") {
+      return [
+        {
+          provider: this.provider,
+          id: "meta-llama/Meta-Llama-3.1-8B-Instruct",
+          label: "Meta Llama 3.1 8B Instruct",
+          isDefault: true,
+        },
+      ];
+    }
     return [{ provider: this.provider, id: "test-model", label: "Test Model", isDefault: true }];
   }
 
@@ -852,6 +862,7 @@ export function createTestAgentClients(): Record<string, AgentClient> {
   return {
     claude: new FakeAgentClient("claude"),
     codex: new FakeAgentClient("codex"),
+    deepinfra: new FakeAgentClient("deepinfra"),
     opencode: new FakeAgentClient("opencode"),
   };
 }

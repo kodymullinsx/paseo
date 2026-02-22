@@ -1,13 +1,12 @@
 import { useCallback, useState } from "react";
-import { Image, Pressable, Text, View, Platform, ScrollView } from "react-native";
+import { Image, Pressable, Text, View, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
-import { QrCode, Link2, ClipboardPaste } from "lucide-react-native";
+import { Link2 } from "lucide-react-native";
 import type { HostProfile } from "@/contexts/daemon-registry-context";
 import { useDaemonRegistry } from "@/contexts/daemon-registry-context";
 import { useSessionStore } from "@/stores/session-store";
 import { AddHostModal } from "./add-host-modal";
-import { PairLinkModal } from "./pair-link-modal";
 import { NameHostModal } from "./name-host-modal";
 import { buildHostAgentDraftRoute } from "@/utils/host-routes";
 
@@ -76,7 +75,6 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
   const router = useRouter();
   const { updateHost } = useDaemonRegistry();
   const [isDirectOpen, setIsDirectOpen] = useState(false);
-  const [isPasteLinkOpen, setIsPasteLinkOpen] = useState(false);
   const [pendingNameHost, setPendingNameHost] = useState<{ serverId: string; hostname: string | null } | null>(null);
   const [pendingRedirectServerId, setPendingRedirectServerId] = useState<string | null>(null);
   const pendingNameHostname = useSessionStore(
@@ -109,7 +107,7 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
         resizeMode="contain"
       />
       <Text style={styles.title}>Welcome to Paseo</Text>
-      <Text style={styles.subtitle}>Add a host to start.</Text>
+      <Text style={styles.subtitle}>Connect to your configured daemon to start.</Text>
 
       <View style={styles.actions}>
         <Pressable
@@ -121,44 +119,11 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
           <Text style={[styles.actionText, styles.actionTextPrimary]}>Direct connection</Text>
         </Pressable>
 
-        <Pressable
-          style={styles.actionButton}
-          onPress={() => setIsPasteLinkOpen(true)}
-          testID="welcome-paste-pairing-link"
-        >
-          <ClipboardPaste size={18} color={theme.colors.foreground} />
-          <Text style={styles.actionText}>Paste pairing link</Text>
-        </Pressable>
-
-        {Platform.OS !== "web" ? (
-          <Pressable
-            style={styles.actionButton}
-            onPress={() => router.push("/pair-scan?source=onboarding")}
-            testID="welcome-scan-qr"
-          >
-            <QrCode size={18} color={theme.colors.foreground} />
-            <Text style={styles.actionText}>Scan QR code</Text>
-          </Pressable>
-        ) : null}
       </View>
 
       <AddHostModal
         visible={isDirectOpen}
         onClose={() => setIsDirectOpen(false)}
-        onSaved={({ profile, serverId, hostname, isNewHost }) => {
-          onHostAdded?.(profile);
-          setPendingRedirectServerId(serverId);
-          if (isNewHost) {
-            setPendingNameHost({ serverId, hostname });
-            return;
-          }
-          finishOnboarding(serverId);
-        }}
-      />
-
-      <PairLinkModal
-        visible={isPasteLinkOpen}
-        onClose={() => setIsPasteLinkOpen(false)}
         onSaved={({ profile, serverId, hostname, isNewHost }) => {
           onHostAdded?.(profile);
           setPendingRedirectServerId(serverId);

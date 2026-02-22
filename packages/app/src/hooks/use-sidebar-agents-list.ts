@@ -49,8 +49,8 @@ function compareByTitleAsc(
   left: SidebarAgentListEntry,
   right: SidebarAgentListEntry
 ): number {
-  const leftTitle = (left.agent.title?.trim() || "New agent").toLocaleLowerCase();
-  const rightTitle = (right.agent.title?.trim() || "New agent").toLocaleLowerCase();
+  const leftTitle = (left.agent.title?.trim() || "New conversation").toLocaleLowerCase();
+  const rightTitle = (right.agent.title?.trim() || "New conversation").toLocaleLowerCase();
   const titleCmp = leftTitle.localeCompare(rightTitle, undefined, {
     numeric: true,
     sensitivity: "base",

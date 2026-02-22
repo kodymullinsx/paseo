@@ -12,6 +12,10 @@ import type {
 import { useDaemonRegistry } from "@/contexts/daemon-registry-context";
 import { useHostRuntimeSession } from "@/runtime/host-runtime";
 import { useFormPreferences, type FormPreferences } from "./use-form-preferences";
+import {
+  normalizeSelectedModelId,
+  resolveCatalogModelId,
+} from "@/utils/model-selection";
 
 // Explicit overrides from URL params or "New Agent" button
 export interface FormInitialValues {
@@ -93,20 +97,12 @@ const allProviderDefinitions = AGENT_PROVIDER_DEFINITIONS;
 const allProviderDefinitionMap = new Map<AgentProvider, AgentProviderDefinition>(
   allProviderDefinitions.map((definition) => [definition.id, definition])
 );
-const fallbackDefinition = allProviderDefinitions[0];
-const DEFAULT_PROVIDER: AgentProvider = fallbackDefinition?.id ?? "claude";
+const fallbackDefinition =
+  allProviderDefinitions.find((definition) => definition.id === "nanoclaw") ??
+  allProviderDefinitions[0];
+const DEFAULT_PROVIDER: AgentProvider = fallbackDefinition?.id ?? "nanoclaw";
 const DEFAULT_MODE_FOR_DEFAULT_PROVIDER =
   fallbackDefinition?.defaultModeId ?? "";
-
-function normalizeSelectedModelId(
-  modelId: string | null | undefined
-): string {
-  const normalized = typeof modelId === "string" ? modelId.trim() : "";
-  if (!normalized || normalized.toLowerCase() === "default") {
-    return "";
-  }
-  return normalized;
-}
 
 function resolveDefaultModel(
   availableModels: AgentModelDefinition[] | null
@@ -201,22 +197,28 @@ function resolveFormState(
       availableModels?.some((am) => am.id === m) ?? false;
     const initialModel = normalizeSelectedModelId(initialValues?.model);
     const preferredModel = normalizeSelectedModelId(providerPrefs?.model);
+    const resolvedInitialModel = normalizeSelectedModelId(
+      resolveCatalogModelId(availableModels, initialModel)
+    );
+    const resolvedPreferredModel = normalizeSelectedModelId(
+      resolveCatalogModelId(availableModels, preferredModel)
+    );
 
     if (initialModel) {
       // If models aren't loaded yet, trust the initial value
       // It will be validated once models load
-      if (!availableModels || isValidModel(initialModel)) {
-        result.model = initialModel;
-      } else if (preferredModel && isValidModel(preferredModel)) {
-        result.model = preferredModel;
+      if (!availableModels || isValidModel(resolvedInitialModel)) {
+        result.model = availableModels ? resolvedInitialModel : initialModel;
+      } else if (resolvedPreferredModel && isValidModel(resolvedPreferredModel)) {
+        result.model = resolvedPreferredModel;
       } else {
         result.model = "";
       }
     } else if (preferredModel) {
       // If models haven't loaded yet, optimistically apply the stored preference.
       // We'll validate once models load and clear it if it isn't available.
-      if (!availableModels || isValidModel(preferredModel)) {
-        result.model = preferredModel;
+      if (!availableModels || isValidModel(resolvedPreferredModel)) {
+        result.model = availableModels ? resolvedPreferredModel : preferredModel;
       } else {
         result.model = "";
       }

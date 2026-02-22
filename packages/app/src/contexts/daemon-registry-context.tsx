@@ -9,9 +9,23 @@ import { ConnectionOfferSchema, type ConnectionOffer } from '@server/shared/conn
 const REGISTRY_STORAGE_KEY = '@paseo:daemon-registry'
 const DAEMON_REGISTRY_QUERY_KEY = ['daemon-registry']
 const DEFAULT_LOCALHOST_ENDPOINT = 'localhost:6767'
-const DEFAULT_LOCALHOST_BOOTSTRAP_KEY = '@paseo:default-localhost-bootstrap-v1'
 const DEFAULT_LOCALHOST_BOOTSTRAP_TIMEOUT_MS = 2500
 const E2E_STORAGE_KEY = '@paseo:e2e'
+
+function resolveDefaultBootstrapEndpoint(): string {
+  const configured = process.env.EXPO_PUBLIC_LOCAL_DAEMON?.trim()
+  if (!configured) {
+    return DEFAULT_LOCALHOST_ENDPOINT
+  }
+  try {
+    return normalizeHostPort(configured)
+  } catch {
+    return DEFAULT_LOCALHOST_ENDPOINT
+  }
+}
+
+export const MANAGED_DIRECT_ENDPOINT = resolveDefaultBootstrapEndpoint()
+const DEFAULT_BOOTSTRAP_KEY = `@paseo:default-direct-bootstrap-v2:${MANAGED_DIRECT_ENDPOINT}`
 
 export type DirectHostConnection = {
   id: string
@@ -72,7 +86,7 @@ function normalizeEndpointOrNull(endpoint: string): string | null {
 }
 
 function isDefaultLocalhostConnection(connection: HostConnection): boolean {
-  return connection.type === 'direct' && connection.endpoint === DEFAULT_LOCALHOST_ENDPOINT
+  return connection.type === 'direct' && connection.endpoint === MANAGED_DIRECT_ENDPOINT
 }
 
 export function hostHasDirectEndpoint(host: HostProfile, endpoint: string): boolean {
@@ -124,7 +138,7 @@ export function DaemonRegistryProvider({ children }: { children: ReactNode }) {
   }, [queryClient, daemons])
 
   const markDefaultLocalhostBootstrapHandled = useCallback(async () => {
-    await AsyncStorage.setItem(DEFAULT_LOCALHOST_BOOTSTRAP_KEY, '1')
+    await AsyncStorage.setItem(DEFAULT_BOOTSTRAP_KEY, '1')
   }, [])
 
   const updateHost = useCallback(
@@ -274,14 +288,14 @@ export function DaemonRegistryProvider({ children }: { children: ReactNode }) {
       try {
         const [isE2E, alreadyHandled] = await Promise.all([
           AsyncStorage.getItem(E2E_STORAGE_KEY),
-          AsyncStorage.getItem(DEFAULT_LOCALHOST_BOOTSTRAP_KEY),
+          AsyncStorage.getItem(DEFAULT_BOOTSTRAP_KEY),
         ])
         if (cancelled || isE2E || alreadyHandled) {
           return
         }
 
         const existing = readDaemons()
-        if (registryHasDirectEndpoint(existing, DEFAULT_LOCALHOST_ENDPOINT)) {
+        if (registryHasDirectEndpoint(existing, MANAGED_DIRECT_ENDPOINT)) {
           await markDefaultLocalhostBootstrapHandled()
           return
         }
@@ -289,9 +303,9 @@ export function DaemonRegistryProvider({ children }: { children: ReactNode }) {
         try {
           const { serverId, hostname } = await probeConnection(
             {
-              id: `bootstrap:${DEFAULT_LOCALHOST_ENDPOINT}`,
+              id: `bootstrap:${MANAGED_DIRECT_ENDPOINT}`,
               type: 'direct',
-              endpoint: DEFAULT_LOCALHOST_ENDPOINT,
+              endpoint: MANAGED_DIRECT_ENDPOINT,
             },
             { timeoutMs: DEFAULT_LOCALHOST_BOOTSTRAP_TIMEOUT_MS }
           )
@@ -299,7 +313,7 @@ export function DaemonRegistryProvider({ children }: { children: ReactNode }) {
 
           await upsertDirectConnection({
             serverId,
-            endpoint: DEFAULT_LOCALHOST_ENDPOINT,
+            endpoint: MANAGED_DIRECT_ENDPOINT,
             label: hostname ?? undefined,
           })
           await markDefaultLocalhostBootstrapHandled()

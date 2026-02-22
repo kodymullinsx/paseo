@@ -632,6 +632,8 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
   },
   itemContent: {
+    flex: 1,
+    minWidth: 0,
     flexShrink: 1,
   },
 }));

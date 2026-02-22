@@ -326,6 +326,7 @@ export type AgentSessionConfig = {
   extra?: {
     codex?: AgentMetadata;
     claude?: Partial<ClaudeAgentOptions>;
+    nanoclaw?: AgentMetadata;
   };
   mcpServers?: Record<string, McpServerConfig>;
   /**

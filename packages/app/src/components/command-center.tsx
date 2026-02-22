@@ -178,7 +178,7 @@ export function CommandCenter() {
                                   style={[styles.title, { color: theme.colors.foreground }]}
                                   numberOfLines={1}
                                 >
-                                  {agent.title || "New agent"}
+                                  {agent.title || "New conversation"}
                                 </Text>
                                 <Text
                                   style={[styles.subtitle, { color: theme.colors.foregroundMuted }]}

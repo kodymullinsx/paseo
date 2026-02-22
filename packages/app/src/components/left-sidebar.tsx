@@ -390,7 +390,7 @@ export function LeftSidebar({ selectedAgentId }: LeftSidebarProps) {
                           size={theme.iconSize.md}
                           color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
                         />
-                        <Text style={[styles.newAgentButtonText, hovered && styles.newAgentButtonTextHovered]}>New agent</Text>
+                        <Text style={[styles.newAgentButtonText, hovered && styles.newAgentButtonTextHovered]}>New conversation</Text>
                       </>
                     )}
                   </Pressable>
@@ -517,7 +517,7 @@ export function LeftSidebar({ selectedAgentId }: LeftSidebarProps) {
                   size={theme.iconSize.md}
                   color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
                 />
-              <Text style={[styles.newAgentButtonText, hovered && styles.newAgentButtonTextHovered]}>New agent</Text>
+              <Text style={[styles.newAgentButtonText, hovered && styles.newAgentButtonTextHovered]}>New conversation</Text>
               </>
             )}
           </Pressable>

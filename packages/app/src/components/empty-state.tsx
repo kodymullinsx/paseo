@@ -18,7 +18,7 @@ export function EmptyState({ onCreateAgent, onImportAgent }: EmptyStateProps) {
       <View style={styles.buttonGroup}>
         <Pressable onPress={onCreateAgent} style={[styles.button, styles.primaryButton]}>
           <Plus size={20} color={styles.primaryButtonText.color} />
-          <Text style={styles.primaryButtonText}>New agent</Text>
+          <Text style={styles.primaryButtonText}>New conversation</Text>
         </Pressable>
         {hasImportCta ? (
           <Pressable

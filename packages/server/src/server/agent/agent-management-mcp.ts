@@ -282,7 +282,7 @@ export async function createAgentManagementMcpServer(
     {
       title: "Create Agent",
       description:
-        "Create a new Claude or Codex agent tied to a working directory. Optionally run an initial prompt immediately or create a git worktree for the agent.",
+        "Create a new Claude, DeepInfra, Codex, or OpenCode agent tied to a working directory. Optionally run an initial prompt immediately or create a git worktree for the agent.",
       inputSchema,
       outputSchema: {
         agentId: z.string(),

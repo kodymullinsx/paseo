@@ -65,6 +65,8 @@ const isToolSequenceItem = (item?: StreamItem) =>
 const AGENT_STREAM_LOG_TAG = "[AgentStreamView]";
 const STREAM_ITEM_LOG_MIN_COUNT = 200;
 const STREAM_ITEM_LOG_DELTA_THRESHOLD = 50;
+const OLDER_TIMELINE_PAGE_LIMIT = 200;
+const LOAD_OLDER_TOP_THRESHOLD_PX = 120;
 
 function collectAssistantTurnContent(
   flatListData: StreamItem[],
@@ -122,6 +124,13 @@ export function AgentStreamView({
   const streamHead = useSessionStore((state) =>
     state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId)
   );
+  const timelineCursor = useSessionStore(
+    (state) =>
+      state.sessions[resolvedServerId]?.agentTimelineCursor?.get(agentId) ??
+      null
+  );
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [hasOlderHistory, setHasOlderHistory] = useState(true);
 
   const { requestDirectoryListing, requestFilePreview, selectExplorerEntry } =
     useFileExplorerActions(resolvedServerId);
@@ -140,7 +149,29 @@ export function AgentStreamView({
     hasAutoScrolledOnce.current = false;
     isNearBottomRef.current = true;
     setExpandedInlineToolCallIds(new Set());
+    setHasOlderHistory(true);
+    setIsLoadingOlder(false);
   }, [agentId]);
+
+  const loadOlderHistory = useCallback(async () => {
+    if (!client || !timelineCursor || !hasOlderHistory || isLoadingOlder) {
+      return;
+    }
+    setIsLoadingOlder(true);
+    try {
+      const payload = await client.fetchAgentTimeline(agentId, {
+        direction: "before",
+        cursor: { epoch: timelineCursor.epoch, seq: timelineCursor.startSeq },
+        limit: OLDER_TIMELINE_PAGE_LIMIT,
+        projection: "projected",
+      });
+      setHasOlderHistory(Boolean(payload.hasOlder));
+    } catch (error) {
+      console.error("[AgentStreamView] Failed to load older timeline entries:", error);
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }, [agentId, client, hasOlderHistory, isLoadingOlder, timelineCursor]);
 
   const handleInlinePathPress = useCallback(
     (target: InlinePathTarget) => {
@@ -183,7 +214,7 @@ export function AgentStreamView({
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset } = event.nativeEvent;
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
       const threshold = Math.max(insets.bottom, 32);
       // In inverted list: scrollTop 0 = bottom, higher values = scrolled up
       const nearBottom = contentOffset.y <= threshold;
@@ -196,8 +227,15 @@ export function AgentStreamView({
       if (showDesktopWebScrollbar) {
         streamScrollbarMetrics.onScroll(event);
       }
+
+      const maxOffsetY = Math.max(0, contentSize.height - layoutMeasurement.height);
+      const distanceToTop = Math.max(0, maxOffsetY - contentOffset.y);
+      const nearTop = distanceToTop <= LOAD_OLDER_TOP_THRESHOLD_PX;
+      if (nearTop) {
+        void loadOlderHistory();
+      }
     },
-    [insets.bottom, showDesktopWebScrollbar, streamScrollbarMetrics]
+    [insets.bottom, loadOlderHistory, showDesktopWebScrollbar, streamScrollbarMetrics]
   );
 
   const scrollToBottomInternal = useCallback(
@@ -650,6 +688,17 @@ export function AgentStreamView({
     theme.colors.foregroundMuted,
   ]);
 
+  const listFooterComponent = useMemo(() => {
+    if (!isLoadingOlder) {
+      return null;
+    }
+    return (
+      <View style={stylesheet.historyLoadingContainer}>
+        <ActivityIndicator size="small" color={theme.colors.foregroundMuted} />
+      </View>
+    );
+  }, [isLoadingOlder, theme.colors.foregroundMuted]);
+
   return (
     <ToolCallSheetProvider>
       <View style={stylesheet.container}>
@@ -680,6 +729,7 @@ export function AgentStreamView({
               }
               ListEmptyComponent={listEmptyComponent}
               ListHeaderComponent={listHeaderComponent}
+              ListFooterComponent={listFooterComponent}
               extraData={flatListExtraData}
               maintainVisibleContentPosition={
                 // Disable when streaming and user is at bottom - we handle auto-scroll ourselves
@@ -1276,6 +1326,11 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   listHeaderContent: {
     gap: theme.spacing[3],
+  },
+  historyLoadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing[3],
   },
   bottomBarWrapper: {
     flexDirection: "row",

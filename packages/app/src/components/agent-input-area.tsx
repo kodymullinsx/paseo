@@ -56,6 +56,7 @@ interface AgentInputAreaProps {
 }
 
 const EMPTY_ARRAY: readonly QueuedMessage[] = []
+const RENAME_COMMAND_REGEX = /^\/rename(?:\s+(.+))?$/i
 
 export function AgentInputArea({
   agentId,
@@ -296,6 +297,38 @@ export function AgentInputArea({
   ) {
     const trimmedMessage = message.trim()
     if (!trimmedMessage) return
+
+    const renameMatch = trimmedMessage.match(RENAME_COMMAND_REGEX)
+    if (renameMatch) {
+      const nextTitle = (renameMatch[1] ?? '').trim()
+      if (!nextTitle) {
+        setSendError("Usage: /rename <new title>")
+        toast.error("Usage: /rename <new title>")
+        return
+      }
+      if (!client) {
+        setSendError("Host is not connected")
+        return
+      }
+
+      try {
+        await client.updateAgent(agentId, { name: nextTitle })
+        if (value !== undefined) {
+          onChangeText?.("")
+        } else {
+          setUserInput("")
+        }
+        setSelectedImages([])
+        setSendError(null)
+        toast.show("Conversation renamed", { variant: "success" })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to rename conversation"
+        setSendError(message)
+        toast.error(message)
+      }
+      return
+    }
+
     // When the parent controls submission (e.g. draft agent creation), let it
     // decide what to do even if the socket is currently disconnected (so we
     // don't no-op and lose deterministic error handling in the UI/tests).

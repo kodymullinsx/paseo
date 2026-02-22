@@ -277,7 +277,7 @@ function SidebarAgentRow({
           ]}
           numberOfLines={1}
         >
-          {entry.agent.title || "New agent"}
+          {entry.agent.title || "New conversation"}
         </Text>
 
         {showArchive ? (

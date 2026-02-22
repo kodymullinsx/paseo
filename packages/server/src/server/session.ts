@@ -153,6 +153,8 @@ const CHECKOUT_DIFF_FALLBACK_REFRESH_MS = 5_000
 const TERMINAL_STREAM_WINDOW_BYTES = 256 * 1024
 const TERMINAL_STREAM_MAX_PENDING_BYTES = 2 * 1024 * 1024
 const TERMINAL_STREAM_MAX_PENDING_CHUNKS = 2048
+const DEFAULT_CONVERSATION_TITLE = 'New conversation'
+const AUTO_RENAME_DELAY_MS = 90_000
 
 function deriveRemoteProjectKey(remoteUrl: string | null): string | null {
   if (!remoteUrl) {
@@ -558,6 +560,10 @@ export class Session {
   private nextTerminalStreamId = 1
   private readonly checkoutDiffSubscriptions = new Map<string, { targetKey: string }>()
   private readonly checkoutDiffTargets = new Map<string, CheckoutDiffWatchTarget>()
+  private readonly pendingAutoRenameByAgentId = new Map<
+    string,
+    { timer: NodeJS.Timeout; prompt: string }
+  >()
   private readonly voiceAgentMcpStdio: VoiceMcpStdioConfig | null
   private readonly localSpeechModelsDir: string
   private readonly defaultLocalSpeechModelIds: LocalSpeechModelId[]
@@ -1798,6 +1804,7 @@ export class Session {
       const liveAgent = this.agentManager.getAgent(agentId)
       if (liveAgent) {
         if (normalizedName) {
+          this.clearPendingAutoRename(agentId)
           await this.agentManager.setTitle(agentId, normalizedName)
         }
         if (normalizedLabels) {
@@ -1809,6 +1816,9 @@ export class Session {
           throw new Error(`Agent not found: ${agentId}`)
         }
 
+        if (normalizedName) {
+          this.clearPendingAutoRename(agentId)
+        }
         await this.agentStorage.upsert({
           ...existing,
           ...(normalizedName ? { title: normalizedName } : {}),
@@ -1843,6 +1853,96 @@ export class Session {
           error: error?.message ? String(error.message) : 'Failed to update agent',
         },
       })
+    }
+  }
+
+  private clearPendingAutoRename(agentId: string): void {
+    const pending = this.pendingAutoRenameByAgentId.get(agentId)
+    if (!pending) {
+      return
+    }
+    clearTimeout(pending.timer)
+    this.pendingAutoRenameByAgentId.delete(agentId)
+  }
+
+  private async maybeScheduleConversationAutoRename(
+    agentId: string,
+    messageText: string
+  ): Promise<void> {
+    const prompt = messageText.trim()
+    if (!prompt) {
+      return
+    }
+
+    const liveAgent = this.agentManager.getAgent(agentId)
+    const currentTitle = liveAgent?.config.title?.trim() ?? ''
+    if (currentTitle !== DEFAULT_CONVERSATION_TITLE) {
+      return
+    }
+
+    const existing = this.pendingAutoRenameByAgentId.get(agentId)
+    if (existing) {
+      existing.prompt = prompt
+      return
+    }
+
+    const timer = setTimeout(() => {
+      const pending = this.pendingAutoRenameByAgentId.get(agentId)
+      if (!pending) {
+        return
+      }
+      this.pendingAutoRenameByAgentId.delete(agentId)
+      void this.autoRenameConversationFromPrompt(agentId, pending.prompt)
+    }, AUTO_RENAME_DELAY_MS)
+
+    this.pendingAutoRenameByAgentId.set(agentId, { timer, prompt })
+  }
+
+  private async autoRenameConversationFromPrompt(agentId: string, prompt: string): Promise<void> {
+    const liveAgent = this.agentManager.getAgent(agentId)
+    if (!liveAgent) {
+      return
+    }
+    if ((liveAgent.config.title?.trim() ?? '') !== DEFAULT_CONVERSATION_TITLE) {
+      return
+    }
+
+    try {
+      const response = await generateStructuredAgentResponseWithFallback({
+        manager: this.agentManager,
+        cwd: liveAgent.config.cwd,
+        prompt: [
+          'Generate a concise conversation title from the user prompt.',
+          'Requirements:',
+          '- 2-6 words',
+          '- plain text only',
+          '- no quotes or punctuation unless required',
+          '- max 60 characters',
+          '',
+          'User prompt:',
+          prompt,
+        ].join('\n'),
+        schema: z.object({
+          title: z.string().trim().min(1).max(60),
+        }),
+        schemaName: 'ConversationTitle',
+        maxRetries: 2,
+        providers: DEFAULT_STRUCTURED_GENERATION_PROVIDERS,
+        agentConfigOverrides: {
+          title: 'Conversation title generator',
+          internal: true,
+        },
+      })
+      const nextTitle = response.title?.trim()
+      if (!nextTitle) {
+        return
+      }
+      await this.agentManager.setTitle(agentId, nextTitle)
+    } catch (error) {
+      this.sessionLogger.warn(
+        { err: error, agentId },
+        'Failed to auto-rename conversation title'
+      )
     }
   }
 
@@ -5334,6 +5434,8 @@ export class Session {
         )
       }
 
+      await this.maybeScheduleConversationAutoRename(agentId, msg.text)
+
       const prompt = this.buildAgentPrompt(msg.text, msg.images)
       const started = this.startAgentStream(agentId, prompt)
       if (!started.ok) {
@@ -6193,6 +6295,11 @@ export class Session {
       this.closeCheckoutDiffWatchTarget(target)
     }
     this.checkoutDiffTargets.clear()
+
+    for (const pending of this.pendingAutoRenameByAgentId.values()) {
+      clearTimeout(pending.timer)
+    }
+    this.pendingAutoRenameByAgentId.clear()
     this.checkoutDiffSubscriptions.clear()
   }
 

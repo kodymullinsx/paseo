@@ -94,6 +94,52 @@ const getLatestPermissionRequest = (
   return null;
 };
 
+function stitchOlderStreamItems(
+  older: StreamItem[],
+  current: StreamItem[]
+): StreamItem[] {
+  if (older.length === 0) {
+    return current;
+  }
+  if (current.length === 0) {
+    return older;
+  }
+
+  const lastOlder = older[older.length - 1];
+  const firstCurrent = current[0];
+  if (!lastOlder || !firstCurrent) {
+    return [...older, ...current];
+  }
+
+  if (
+    lastOlder.kind === "assistant_message" &&
+    firstCurrent.kind === "assistant_message"
+  ) {
+    return [
+      ...older.slice(0, -1),
+      {
+        ...firstCurrent,
+        text: `${lastOlder.text}${firstCurrent.text}`,
+      },
+      ...current.slice(1),
+    ];
+  }
+
+  if (lastOlder.kind === "thought" && firstCurrent.kind === "thought") {
+    return [
+      ...older.slice(0, -1),
+      {
+        ...firstCurrent,
+        text: `${lastOlder.text}${firstCurrent.text}`,
+        status: firstCurrent.status,
+      },
+      ...current.slice(1),
+    ];
+  }
+
+  return [...older, ...current];
+}
+
 type FileExplorerPayload = Extract<
   SessionOutboundMessage,
   { type: "file_explorer_response" }
@@ -665,8 +711,8 @@ function SessionProviderInternal({
         timestamp: new Date(entry.timestamp),
       }));
 
-      const replace = payload.reset || payload.direction !== "after";
-      if (replace) {
+      const shouldReplace = payload.reset || payload.direction === "tail";
+      if (shouldReplace) {
         const hydrated = hydrateStreamState(hydratedEvents);
         setAgentStreamTail(serverId, (prev) => {
           const next = new Map(prev);
@@ -674,6 +720,17 @@ function SessionProviderInternal({
           return next;
         });
         clearAgentStreamHead(serverId, agentId);
+      } else if (payload.direction === "before" && hydratedEvents.length > 0) {
+        const hydrated = hydrateStreamState(hydratedEvents);
+        setAgentStreamTail(serverId, (prev) => {
+          const next = new Map(prev);
+          const current = next.get(agentId) ?? [];
+          const currentIds = new Set(current.map((item) => item.id));
+          const uniqueOlder = hydrated.filter((item) => !currentIds.has(item.id));
+          const updated = stitchOlderStreamItems(uniqueOlder, current);
+          next.set(agentId, updated);
+          return next;
+        });
       } else if (hydratedEvents.length > 0) {
         setAgentStreamTail(serverId, (prev) => {
           const next = new Map(prev);
@@ -690,11 +747,24 @@ function SessionProviderInternal({
       setAgentTimelineCursor(serverId, (prev) => {
         const next = new Map(prev);
         if (payload.startCursor && payload.endCursor) {
-          next.set(agentId, {
-            epoch: payload.epoch,
-            startSeq: payload.startCursor.seq,
-            endSeq: payload.endCursor.seq,
-          });
+          const existing = prev.get(agentId);
+          if (
+            payload.reset ||
+            !existing ||
+            existing.epoch !== payload.epoch
+          ) {
+            next.set(agentId, {
+              epoch: payload.epoch,
+              startSeq: payload.startCursor.seq,
+              endSeq: payload.endCursor.seq,
+            });
+          } else {
+            next.set(agentId, {
+              epoch: payload.epoch,
+              startSeq: Math.min(existing.startSeq, payload.startCursor.seq),
+              endSeq: Math.max(existing.endSeq, payload.endCursor.seq),
+            });
+          }
         } else if (payload.reset) {
           next.delete(agentId);
         }

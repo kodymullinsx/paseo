@@ -33,7 +33,7 @@ function agentKey(agent: Pick<AggregatedAgent, "serverId" | "id">): string {
 function isMatch(agent: AggregatedAgent, query: string): boolean {
   if (!query) return true;
   const q = query.toLowerCase();
-  const title = (agent.title ?? "New agent").toLowerCase();
+  const title = (agent.title ?? "New conversation").toLowerCase();
   const cwd = agent.cwd.toLowerCase();
   const host = agent.serverLabel.toLowerCase();
   return title.includes(q) || cwd.includes(q) || host.includes(q);
@@ -77,10 +77,10 @@ type CommandCenterActionDefinition = {
 const COMMAND_CENTER_ACTIONS: readonly CommandCenterActionDefinition[] = [
   {
     id: "new-agent",
-    title: "New agent",
+    title: "New conversation",
     icon: "plus",
     shortcutKeys: ["mod", "alt", "N"],
-    keywords: ["new", "new agent", "create", "start", "launch", "agent"],
+    keywords: ["new", "new conversation", "new agent", "create", "start", "launch", "agent"],
     buildRoute: ({ newAgentRoute }) => newAgentRoute,
   },
   {

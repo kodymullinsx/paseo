@@ -79,7 +79,7 @@ export function deriveLabelFromEndpoint(endpoint: string): string {
 }
 
 function shouldUseSecureWebSocket(port: number): boolean {
-  return port === 443;
+  return port === 443 || port === 4443 || port === 8443;
 }
 
 export function buildDaemonWebSocketUrl(

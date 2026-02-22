@@ -122,7 +122,7 @@ const SHORTCUT_BINDINGS: readonly KeyboardShortcutBinding[] = [
     help: {
       id: "new-agent",
       section: "global",
-      label: "Create new agent",
+      label: "Create new conversation",
       keys: ["mod", "alt", "N"],
       when: (context) => !context.isTauri,
     },
@@ -139,7 +139,7 @@ const SHORTCUT_BINDINGS: readonly KeyboardShortcutBinding[] = [
     help: {
       id: "new-agent",
       section: "global",
-      label: "Create new agent",
+      label: "Create new conversation",
       keys: ["mod", "N"],
       when: (context) => context.isTauri,
     },

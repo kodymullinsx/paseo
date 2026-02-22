@@ -14,7 +14,7 @@ Paseo is a mobile app for monitoring and controlling your local AI coding agents
 
 **Not a cloud sandbox** - Paseo connects directly to your actual development environment. Your code stays on your machine.
 
-**Supported agents:** Claude Code, Codex, and OpenCode.
+**Supported agents/providers:** Claude Code, DeepInfra API, Codex, and OpenCode.
 
 ## Monorepo Structure
 
@@ -235,9 +235,11 @@ Release completion checklist:
 
 ## Agent Authentication
 
-All agent providers (Claude, Codex, OpenCode) handle their own authentication outside of environment variables. They are authenticated without providing any extra configuration—Paseo does not manage API keys or tokens for agents.
+- Claude, Codex, and OpenCode handle authentication through their native CLIs/integrations.
+- DeepInfra is API-key based and requires `DEEPINFRA_API_KEY` (optional `DEEPINFRA_API_BASE_URL` and `DEEPINFRA_DEFAULT_MODEL`).
+- Paseo is not containerized and does not enforce legacy directory visibility constraints; workspace-root UX defaults should not be treated as terminal/tooling restrictions.
 
-**Do not add auth checks to tests.** If auth fails for whatever reason, let the user know instead of patching the code or adding conditional skips.
+**Do not add auth checks to tests.** If auth fails, report it instead of patching tests with conditional skips.
 
 ## NEVER DO THESE THINGS
 

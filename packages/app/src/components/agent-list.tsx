@@ -226,7 +226,7 @@ export function AgentList({
                   ]}
                   numberOfLines={1}
                 >
-                  {agent.title || "New agent"}
+                  {agent.title || "New conversation"}
                 </Text>
               </View>
 

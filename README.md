@@ -15,7 +15,7 @@
 > [!WARNING]
 > **Early development** — Features may break or change without notice. Use at your own risk.
 
-Paseo is a self-hosted daemon for Claude Code, Codex, and OpenCode. Agents run on your machine with your full dev environment. Connect from phone, desktop, or web.
+Paseo is a self-hosted daemon for Claude Code, DeepInfra (API), Codex, and OpenCode. Agents run on your machine with your full dev environment. Connect from phone, desktop, or web.
 
 ## Getting Started
 

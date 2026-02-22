@@ -875,7 +875,7 @@ function DraftAgentScreenContent({
         model,
         modeId,
       },
-      title: 'New agent',
+      title: 'New conversation',
       cwd,
       model,
       thinkingOptionId,
@@ -991,6 +991,7 @@ function DraftAgentScreenContent({
       const config: AgentSessionConfig = {
         provider: selectedProvider,
         cwd: resolvedWorkingDir,
+        title: 'New conversation',
         ...(modeId ? { modeId } : {}),
         ...(trimmedModel ? { model: trimmedModel } : {}),
         ...(trimmedThinkingOptionId ? { thinkingOptionId: trimmedThinkingOptionId } : {}),

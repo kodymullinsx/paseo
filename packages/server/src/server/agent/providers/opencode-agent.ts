@@ -33,6 +33,7 @@ import {
   resolveProviderCommandPrefix,
   type ProviderRuntimeSettings,
 } from "../provider-launch-config.js";
+import { listDeepInfraModels } from "./deepinfra-model-catalog.js";
 import { mapOpencodeToolCall } from "./opencode/tool-call-mapper.js";
 
 const OPENCODE_CAPABILITIES: AgentCapabilityFlags = {
@@ -437,35 +438,51 @@ export class OpenCodeAgentClient implements AgentClient {
       directory: options?.cwd ?? process.cwd(),
     });
 
-    // Set a timeout for the API call to fail fast if OpenCode isn't responding
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("OpenCode provider.list timed out after 10s - server may not be authenticated or connected to any providers")), 10_000);
-    });
+    let providers:
+      | Awaited<ReturnType<OpencodeClient["provider"]["list"]>>["data"]
+      | null = null;
+    let providerListError: Error | null = null;
 
-    const response = await Promise.race([
-      client.provider.list({ directory: options?.cwd ?? process.cwd() }),
-      timeoutPromise,
-    ]);
+    try {
+      // Set a timeout for the API call to fail fast if OpenCode isn't responding.
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "OpenCode provider.list timed out after 10s - server may not be authenticated or connected to any providers"
+              )
+            ),
+          10_000
+        );
+      });
 
-    if (response.error) {
-      throw new Error(`Failed to fetch OpenCode providers: ${JSON.stringify(response.error)}`);
-    }
+      const response = await Promise.race([
+        client.provider.list({ directory: options?.cwd ?? process.cwd() }),
+        timeoutPromise,
+      ]);
 
-    const providers = response.data;
-    if (!providers) {
-      return [];
+      if (response.error) {
+        throw new Error(
+          `Failed to fetch OpenCode providers: ${JSON.stringify(response.error)}`
+        );
+      }
+
+      providers = response.data ?? null;
+    } catch (error) {
+      providerListError =
+        error instanceof Error ? error : new Error(String(error));
+      this.logger.warn(
+        { err: providerListError },
+        "Failed to fetch OpenCode provider catalog"
+      );
     }
 
     // Only include models from connected providers (ones that are actually available)
-    const connectedProviderIds = new Set(providers.connected);
-
-    // Fail fast if no providers are connected
-    if (connectedProviderIds.size === 0) {
-      throw new Error("OpenCode has no connected providers. Please authenticate with at least one provider (e.g., openai, anthropic) or set appropriate environment variables (e.g., OPENAI_API_KEY).");
-    }
+    const connectedProviderIds = new Set(providers?.connected ?? []);
 
     const models: AgentModelDefinition[] = [];
-    for (const provider of providers.all) {
+    for (const provider of providers?.all ?? []) {
       // Skip providers that aren't connected/configured
       if (!connectedProviderIds.has(provider.id)) {
         continue;
@@ -500,7 +517,33 @@ export class OpenCodeAgentClient implements AgentClient {
       }
     }
 
-    return models;
+    try {
+      const deepInfraModels = await listDeepInfraModels();
+      if (deepInfraModels.length > 0) {
+        const existingIds = new Set(models.map((model) => model.id));
+        for (const model of deepInfraModels) {
+          if (!existingIds.has(model.id)) {
+            models.push(model);
+            existingIds.add(model.id);
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.warn({ err: error }, "Failed to fetch DeepInfra model catalog");
+    }
+
+    if (models.length > 0) {
+      return models;
+    }
+
+    if (providerListError) {
+      throw providerListError;
+    }
+
+    throw new Error(
+      "OpenCode has no connected providers and DeepInfra models are unavailable. " +
+        "Authenticate at least one provider (for example OPENAI_API_KEY) or set DEEPINFRA_API_KEY."
+    );
   }
 
   async listPersistedAgents(_options?: ListPersistedAgentsOptions): Promise<PersistedAgentDescriptor[]> {

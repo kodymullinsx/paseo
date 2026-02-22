@@ -8,7 +8,7 @@ import {
   Alert,
   Platform,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, UnistylesRuntime, useUnistyles } from "react-native-unistyles";
@@ -24,9 +24,7 @@ import {
   isHostRuntimeConnected,
   useHostRuntimeSession,
 } from "@/runtime/host-runtime";
-import { AddHostMethodModal } from "@/components/add-host-method-modal";
 import { AddHostModal } from "@/components/add-host-modal";
-import { PairLinkModal } from "@/components/pair-link-modal";
 import { NameHostModal } from "@/components/name-host-modal";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -449,7 +447,6 @@ export default function SettingsScreen() {
   const { theme } = useUnistyles();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ editHost?: string; serverId?: string }>();
-  const routeServerId = typeof params.serverId === "string" ? params.serverId.trim() : "";
   const { settings, isLoading: settingsLoading, updateSettings } = useAppSettings();
   const {
     daemons,
@@ -458,9 +455,7 @@ export default function SettingsScreen() {
     removeHost,
     removeConnection,
   } = useDaemonRegistry();
-  const [isAddHostMethodVisible, setIsAddHostMethodVisible] = useState(false);
   const [isDirectHostVisible, setIsDirectHostVisible] = useState(false);
-  const [isPasteLinkVisible, setIsPasteLinkVisible] = useState(false);
   const [addConnectionTargetServerId, setAddConnectionTargetServerId] = useState<string | null>(null);
   const [pendingEditReopenServerId, setPendingEditReopenServerId] = useState<string | null>(null);
   const [pendingNameHost, setPendingNameHost] = useState<{ serverId: string; hostname: string | null } | null>(null);
@@ -533,16 +528,8 @@ export default function SettingsScreen() {
   }, [isSavingEdit]);
 
   const closeAddConnectionFlow = useCallback(() => {
-    setIsAddHostMethodVisible(false);
     setIsDirectHostVisible(false);
-    setIsPasteLinkVisible(false);
     setAddConnectionTargetServerId(null);
-  }, []);
-
-  const goBackToAddConnectionMethods = useCallback(() => {
-    setIsDirectHostVisible(false);
-    setIsPasteLinkVisible(false);
-    setIsAddHostMethodVisible(true);
   }, []);
 
   useEffect(() => {
@@ -557,7 +544,7 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     if (!pendingEditReopenServerId) return;
-    if (isAddHostMethodVisible || isDirectHostVisible || isPasteLinkVisible) return;
+    if (isDirectHostVisible) return;
     const profile = daemons.find((daemon) => daemon.serverId === pendingEditReopenServerId) ?? null;
     setPendingEditReopenServerId(null);
     setAddConnectionTargetServerId(null);
@@ -567,9 +554,7 @@ export default function SettingsScreen() {
   }, [
     daemons,
     handleEditDaemon,
-    isAddHostMethodVisible,
     isDirectHostVisible,
-    isPasteLinkVisible,
     pendingEditReopenServerId,
   ]);
 
@@ -680,7 +665,7 @@ export default function SettingsScreen() {
     setEditingDaemon(null);
     setAddConnectionTargetServerId(serverId);
     setPendingEditReopenServerId(serverId);
-    setIsAddHostMethodVisible(true);
+    setIsDirectHostVisible(true);
   }, [editingServerId]);
 
   const handleThemeChange = useCallback(
@@ -738,55 +723,17 @@ export default function SettingsScreen() {
               onPress={() => {
                 setAddConnectionTargetServerId(null);
                 setPendingEditReopenServerId(null);
-                setIsAddHostMethodVisible(true);
+                setIsDirectHostVisible(true);
               }}
             >
               <Text style={styles.addButtonText}>+ Add connection</Text>
             </Pressable>
           </View>
 
-          <AddHostMethodModal
-            visible={isAddHostMethodVisible}
-            onClose={closeAddConnectionFlow}
-            onDirectConnection={() => {
-              setIsAddHostMethodVisible(false);
-              setIsDirectHostVisible(true);
-            }}
-            onPasteLink={() => {
-              setIsAddHostMethodVisible(false);
-              setIsPasteLinkVisible(true);
-            }}
-            onScanQr={() => {
-              const targetServerId = addConnectionTargetServerId;
-              const source = targetServerId ? "editHost" : "settings";
-              const sourceServerId = routeServerId || targetServerId || undefined;
-              closeAddConnectionFlow();
-              router.push({
-                pathname: "/pair-scan",
-                params: targetServerId
-                    ? { source, targetServerId, sourceServerId }
-                    : { source, sourceServerId },
-              });
-            }}
-          />
-
           <AddHostModal
             visible={isDirectHostVisible}
             targetServerId={addConnectionTargetServerId ?? undefined}
             onClose={closeAddConnectionFlow}
-            onCancel={goBackToAddConnectionMethods}
-            onSaved={({ serverId, hostname, isNewHost }) => {
-              if (isNewHost) {
-                setPendingNameHost({ serverId, hostname });
-              }
-            }}
-          />
-
-          <PairLinkModal
-            visible={isPasteLinkVisible}
-            targetServerId={addConnectionTargetServerId ?? undefined}
-            onClose={closeAddConnectionFlow}
-            onCancel={goBackToAddConnectionMethods}
             onSaved={({ serverId, hostname, isNewHost }) => {
               if (isNewHost) {
                 setPendingNameHost({ serverId, hostname });

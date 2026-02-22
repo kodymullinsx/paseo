@@ -24,6 +24,12 @@ const PROVIDERS: ProviderListItem[] = [
     modes: 'read-only, auto, full-access',
   },
   {
+    provider: 'deepinfra',
+    status: 'available',
+    defaultMode: 'default',
+    modes: 'default',
+  },
+  {
     provider: 'opencode',
     status: 'available',
     defaultMode: 'default',

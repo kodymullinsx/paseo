@@ -17,28 +17,28 @@ function formatTimestamp(date: Date): string {
   }).format(date);
 }
 
-function getToolIcon(toolKind?: string): string {
+function getToolLabel(toolKind?: string): string {
   switch (toolKind) {
     case 'read':
-      return '📖';
+      return 'Read';
     case 'edit':
-      return '✏️';
+      return 'Edit';
     case 'delete':
-      return '🗑️';
+      return 'Delete';
     case 'move':
-      return '📦';
+      return 'Move';
     case 'search':
-      return '🔍';
+      return 'Search';
     case 'execute':
-      return '▶️';
+      return 'Execute';
     case 'think':
-      return '💭';
+      return 'Think';
     case 'fetch':
-      return '🌐';
+      return 'Fetch';
     case 'switch_mode':
-      return '🔄';
+      return 'Switch mode';
     default:
-      return '🔧';
+      return 'Tool';
   }
 }
 
@@ -66,7 +66,10 @@ function GroupedTextItem({ item }: { item: GroupedTextMessage }) {
         {formatTimestamp(item.startTimestamp)}
       </Text>
       {isThought && (
-        <Text style={stylesheet.thoughtLabel}>💭 Thinking</Text>
+        <View style={stylesheet.dotLabelRow}>
+          <View style={[stylesheet.typeDot, stylesheet.typeDotThought]} />
+          <Text style={stylesheet.thoughtLabel}>Thinking</Text>
+        </View>
       )}
       <Text style={[stylesheet.text, isThought && stylesheet.thoughtText]}>
         {item.text}
@@ -89,7 +92,8 @@ function MergedToolCallItem({ item }: { item: MergedToolCall }) {
             {formatTimestamp(item.startTimestamp)}
           </Text>
           <View style={stylesheet.toolTitleRow}>
-            <Text style={stylesheet.toolIcon}>{getToolIcon(item.toolKind)}</Text>
+            <View style={[stylesheet.typeDot, stylesheet.typeDotTool]} />
+            <Text style={stylesheet.toolKindLabel}>{getToolLabel(item.toolKind)}</Text>
             <Text style={stylesheet.toolTitle}>{item.title}</Text>
             <View
               style={[
@@ -149,7 +153,7 @@ function PlanItem({ update, timestamp }: { update: SessionUpdate; timestamp: Dat
         <View style={stylesheet.planHeaderLeft}>
           <Text style={stylesheet.timestamp}>{formatTimestamp(timestamp)}</Text>
           <Text style={stylesheet.planTitle}>
-            📋 Tasks ({update.entries.length})
+            Tasks ({update.entries.length})
           </Text>
         </View>
         <Text style={stylesheet.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
@@ -159,14 +163,12 @@ function PlanItem({ update, timestamp }: { update: SessionUpdate; timestamp: Dat
         <View style={stylesheet.planContent}>
           {update.entries.map((entry, idx) => (
             <View key={idx} style={stylesheet.planEntry}>
-              <Text
+              <View
                 style={[
-                  stylesheet.planEntryStatus,
-                  { color: getStatusColor(entry.status) },
+                  stylesheet.planEntryStatusDot,
+                  { backgroundColor: getStatusColor(entry.status) },
                 ]}
-              >
-                {entry.status === 'completed' ? '✓' : entry.status === 'in_progress' ? '⏳' : '○'}
-              </Text>
+              />
               <Text style={stylesheet.planEntryText}>{entry.content}</Text>
             </View>
           ))}
@@ -272,10 +274,28 @@ const stylesheet = StyleSheet.create((theme) => ({
     marginBottom: theme.spacing[0],
   },
   thoughtLabel: {
-    color: theme.colors.palette.purple[500],
+    color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.semibold,
     marginBottom: theme.spacing[0],
+  },
+  dotLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing[1],
+    marginBottom: theme.spacing[0],
+  },
+  typeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: theme.colors.foregroundMuted,
+  },
+  typeDotThought: {
+    backgroundColor: theme.colors.foregroundMuted,
+  },
+  typeDotTool: {
+    backgroundColor: theme.colors.foregroundMuted,
   },
   text: {
     color: theme.colors.foreground,
@@ -307,11 +327,12 @@ const stylesheet = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     marginTop: theme.spacing[1],
   },
-  toolIcon: {
-    fontSize: theme.fontSize.base,
+  toolKindLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.xs,
   },
   toolTitle: {
-    color: theme.colors.palette.blue[400],
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.semibold,
     flex: 1,
@@ -373,7 +394,7 @@ const stylesheet = StyleSheet.create((theme) => ({
     flex: 1,
   },
   planTitle: {
-    color: theme.colors.palette.green[400],
+    color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.semibold,
     marginTop: theme.spacing[1],
@@ -389,9 +410,12 @@ const stylesheet = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     marginBottom: theme.spacing[2],
   },
-  planEntryStatus: {
-    fontSize: theme.fontSize.sm,
-    marginTop: 2,
+  planEntryStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    marginTop: 6,
+    flexShrink: 0,
   },
   planEntryText: {
     color: theme.colors.foreground,

@@ -11,18 +11,15 @@ import {
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  formatModelDisplayLabel,
+  normalizeSelectedModelId,
+  resolveCatalogModelId,
+} from "@/utils/model-selection";
 
 interface AgentStatusBarProps {
   agentId: string;
   serverId: string;
-}
-
-function normalizeModelId(modelId: string | null | undefined): string | null {
-  const normalized = typeof modelId === "string" ? modelId.trim() : "";
-  if (!normalized || normalized.toLowerCase() === "default") {
-    return null;
-  }
-  return normalized;
 }
 
 export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
@@ -69,16 +66,22 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
     });
   }
 
-  const normalizedRuntimeModelId = normalizeModelId(agent.runtimeInfo?.model);
-  const normalizedConfiguredModelId = normalizeModelId(agent.model);
-  const preferredModelId = normalizedRuntimeModelId ?? normalizedConfiguredModelId;
+  const normalizedRuntimeModelId = normalizeSelectedModelId(
+    resolveCatalogModelId(models, agent.runtimeInfo?.model)
+  );
+  const normalizedConfiguredModelId = normalizeSelectedModelId(
+    resolveCatalogModelId(models, agent.model)
+  );
+  const preferredModelId = normalizedRuntimeModelId || normalizedConfiguredModelId || null;
   const selectedModel = useMemo(() => {
     if (!models || !preferredModelId) return null;
     return models.find((m) => m.id === preferredModelId) ?? null;
   }, [models, preferredModelId]);
 
   const activeModelId = selectedModel?.id ?? preferredModelId ?? null;
-  const displayModel = selectedModel ? selectedModel.label : preferredModelId ?? "Auto";
+  const displayModel = selectedModel
+    ? formatModelDisplayLabel(selectedModel)
+    : preferredModelId ?? "Auto";
 
   const thinkingOptions = selectedModel?.thinkingOptions ?? null;
   const explicitThinkingId =
@@ -96,9 +99,16 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
     agent.availableModes?.find((m) => m.id === agent.currentModeId)?.label ||
     agent.currentModeId ||
     "default";
+  const displayProvider = agent.provider || "unknown";
 
   return (
     <View style={[styles.container, IS_WEB && { marginBottom: -theme.spacing[1] }]}>
+      <View style={styles.providerBadge} testID="agent-provider-badge">
+        <Text style={styles.providerBadgeText} numberOfLines={1} ellipsizeMode="tail">
+          {displayProvider}
+        </Text>
+      </View>
+
       {/* Agent Mode Badge (desktop only — on mobile, mode is in the preferences sheet) */}
       {IS_WEB && agent.availableModes && agent.availableModes.length > 0 && (
         <DropdownMenu>
@@ -112,7 +122,7 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
             accessibilityLabel="Select agent mode"
             testID="agent-mode-selector"
           >
-            <Text style={styles.modeBadgeText}>
+            <Text style={styles.modeBadgeText} numberOfLines={1} ellipsizeMode="middle">
               {agent.availableModes?.find((m) => m.id === agent.currentModeId)
                 ?.label ||
                 agent.currentModeId ||
@@ -156,7 +166,9 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
               accessibilityLabel="Select agent model"
               testID="agent-model-selector"
             >
-              <Text style={styles.modeBadgeText}>{displayModel}</Text>
+              <Text style={styles.modeBadgeText} numberOfLines={1} ellipsizeMode="middle">
+                {displayModel}
+              </Text>
               <ChevronDown size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -180,7 +192,7 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
                       });
                     }}
                   >
-                    {model.label}
+                    {formatModelDisplayLabel(model)}
                   </DropdownMenuItem>
                 );
               })}
@@ -204,7 +216,9 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
                   color={theme.colors.foregroundMuted}
                   style={{ marginTop: 1 }}
                 />
-                <Text style={styles.modeBadgeText}>{displayThinking}</Text>
+                <Text style={styles.modeBadgeText} numberOfLines={1} ellipsizeMode="middle">
+                  {displayThinking}
+                </Text>
                 <ChevronDown size={theme.iconSize.sm} color={theme.colors.foregroundMuted} />
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -274,7 +288,9 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
                     accessibilityLabel="Select agent mode"
                     testID="agent-preferences-mode"
                   >
-                    <Text style={styles.sheetSelectText}>{displayMode}</Text>
+                    <Text style={styles.sheetSelectText} numberOfLines={1} ellipsizeMode="middle">
+                      {displayMode}
+                    </Text>
                     <ChevronDown size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent side="top" align="start">
@@ -306,7 +322,9 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
                   accessibilityLabel="Select agent model"
                   testID="agent-preferences-model"
                 >
-                  <Text style={styles.sheetSelectText}>{displayModel}</Text>
+                  <Text style={styles.sheetSelectText} numberOfLines={1} ellipsizeMode="middle">
+                    {displayModel}
+                  </Text>
                   <ChevronDown size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" align="start">
@@ -325,7 +343,7 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
                           });
                         }}
                       >
-                        {model.label}
+                        {formatModelDisplayLabel(model)}
                       </DropdownMenuItem>
                     );
                   })}
@@ -345,7 +363,9 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
                     accessibilityLabel="Select thinking option"
                     testID="agent-preferences-thinking"
                   >
-                    <Text style={styles.sheetSelectText}>{displayThinking}</Text>
+                    <Text style={styles.sheetSelectText} numberOfLines={1} ellipsizeMode="middle">
+                      {displayThinking}
+                    </Text>
                     <ChevronDown size={theme.iconSize.md} color={theme.colors.foregroundMuted} />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent side="top" align="start">
@@ -387,12 +407,16 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
+    minWidth: 0,
   },
   modeBadge: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "transparent",
     gap: theme.spacing[1],
+    maxWidth: 360,
+    minWidth: 0,
+    flexShrink: 1,
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[1],
     borderRadius: theme.borderRadius["2xl"],
@@ -404,9 +428,26 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface0,
   },
   modeBadgeText: {
+    flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
+  },
+  providerBadge: {
+    backgroundColor: theme.colors.surface1,
+    borderColor: theme.colors.surface2,
+    borderRadius: theme.borderRadius["2xl"],
+    borderWidth: 1,
+    maxWidth: 180,
+    minWidth: 0,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+  },
+  providerBadgeText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+    textTransform: "capitalize",
   },
   prefsButton: {
     width: 34,

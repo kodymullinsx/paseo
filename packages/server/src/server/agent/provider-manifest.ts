@@ -1,123 +1,177 @@
-import { z } from "zod";
-import type { AgentMode } from "./agent-sdk-types.js";
+import { z } from 'zod'
+import type { AgentMode } from './agent-sdk-types.js'
 
 export interface AgentProviderDefinition {
-  id: string;
-  label: string;
-  description: string;
-  defaultModeId: string | null;
-  modes: AgentMode[];
+  id: string
+  label: string
+  description: string
+  enabledByDefault?: boolean
+  defaultModeId: string | null
+  modes: AgentMode[]
   voice?: {
-    enabled: boolean;
-    defaultModeId: string;
-    defaultModel?: string;
-  };
+    enabled: boolean
+    defaultModeId: string
+    defaultModel?: string
+  }
 }
 
 const CLAUDE_MODES: AgentMode[] = [
   {
-    id: "default",
-    label: "Always Ask",
-    description: "Prompts for permission the first time a tool is used",
+    id: 'default',
+    label: 'Always Ask',
+    description: 'Prompts for permission the first time a tool is used',
   },
   {
-    id: "acceptEdits",
-    label: "Accept File Edits",
-    description: "Automatically approves edit-focused tools without prompting",
+    id: 'acceptEdits',
+    label: 'Accept File Edits',
+    description: 'Automatically approves edit-focused tools without prompting',
   },
   {
-    id: "plan",
-    label: "Plan Mode",
-    description: "Analyze the codebase without executing tools or edits",
+    id: 'plan',
+    label: 'Plan Mode',
+    description: 'Analyze the codebase without executing tools or edits',
   },
   {
-    id: "bypassPermissions",
-    label: "Bypass",
-    description: "Skip all permission prompts (use with caution)",
+    id: 'bypassPermissions',
+    label: 'Bypass',
+    description: 'Skip all permission prompts (use with caution)',
   },
-];
+]
 
 const CODEX_MODES: AgentMode[] = [
   {
-    id: "read-only",
-    label: "Read Only",
+    id: 'read-only',
+    label: 'Read Only',
     description:
-      "Read files and answer questions. Manual approval required for edits, commands, or network ops.",
+      'Read files and answer questions. Manual approval required for edits, commands, or network ops.',
   },
   {
-    id: "auto",
-    label: "Auto",
-    description:
-      "Edit files and run commands but still request approval before escalating scope.",
+    id: 'auto',
+    label: 'Auto',
+    description: 'Edit files and run commands but still request approval before escalating scope.',
   },
   {
-    id: "full-access",
-    label: "Full Access",
-    description: "Edit files, run commands, and access the network without additional prompts.",
+    id: 'full-access',
+    label: 'Full Access',
+    description: 'Edit files, run commands, and access the network without additional prompts.',
   },
-];
+]
 
 const OPENCODE_MODES: AgentMode[] = [
   {
-    id: "default",
-    label: "Default",
-    description: "Standard permission rules",
+    id: 'default',
+    label: 'Default',
+    description: 'Standard permission rules',
   },
-];
+]
+
+const DEEPINFRA_MODES: AgentMode[] = [
+  {
+    id: 'default',
+    label: 'Default',
+    description: 'API-based DeepInfra session mode',
+  },
+]
+
+const NANOCLAW_MODES: AgentMode[] = [
+  {
+    id: 'default',
+    label: 'Always Ask',
+    description: 'Nanoclaw-scoped Claude runtime with tool permission prompts',
+  },
+  {
+    id: 'acceptEdits',
+    label: 'Accept File Edits',
+    description: 'Automatically approves edit-focused tools without prompting',
+  },
+  {
+    id: 'plan',
+    label: 'Plan Mode',
+    description: 'Analyze the codebase without executing tools or edits',
+  },
+  {
+    id: 'bypassPermissions',
+    label: 'Bypass',
+    description: 'Skip all permission prompts (use with caution)',
+  },
+]
 
 export const AGENT_PROVIDER_DEFINITIONS: AgentProviderDefinition[] = [
   {
-    id: "claude",
-    label: "Claude",
-    description:
-      "Anthropic's multi-tool assistant with MCP support, streaming, and deep reasoning",
-    defaultModeId: "default",
+    id: 'claude',
+    label: 'Claude',
+    description: "Anthropic's multi-tool assistant with MCP support, streaming, and deep reasoning",
+    enabledByDefault: false,
+    defaultModeId: 'default',
     modes: CLAUDE_MODES,
     voice: {
       enabled: true,
-      defaultModeId: "default",
-      defaultModel: "haiku",
+      defaultModeId: 'default',
+      defaultModel: 'haiku',
     },
   },
   {
-    id: "codex",
-    label: "Codex",
-    description:
-      "OpenAI's Codex workspace agent with sandbox controls and optional network access",
-    defaultModeId: "auto",
+    id: 'codex',
+    label: 'Codex',
+    description: "OpenAI's Codex workspace agent with sandbox controls and optional network access",
+    enabledByDefault: false,
+    defaultModeId: 'auto',
     modes: CODEX_MODES,
     voice: {
       enabled: true,
-      defaultModeId: "read-only",
-      defaultModel: "gpt-5.1-codex-mini",
+      defaultModeId: 'read-only',
+      defaultModel: 'gpt-5.1-codex-mini',
     },
   },
   {
-    id: "opencode",
-    label: "OpenCode",
-    description:
-      "Open-source coding assistant with multi-provider model support",
-    defaultModeId: "default",
+    id: 'opencode',
+    label: 'OpenCode',
+    description: 'Open-source coding assistant with multi-provider model support',
+    enabledByDefault: false,
+    defaultModeId: 'default',
     modes: OPENCODE_MODES,
     voice: {
       enabled: true,
-      defaultModeId: "default",
+      defaultModeId: 'default',
     },
   },
-];
+  {
+    id: 'nanoclaw',
+    label: 'Circe',
+    description: 'Nanoclaw-scoped Claude agent with workspace-root-first UX',
+    enabledByDefault: true,
+    defaultModeId: 'default',
+    modes: NANOCLAW_MODES,
+  },
+  {
+    id: 'deepinfra',
+    label: 'DeepInfra',
+    description: 'OpenAI-compatible API provider for key-based fallback when local CLIs are unavailable',
+    enabledByDefault: false,
+    defaultModeId: 'default',
+    modes: DEEPINFRA_MODES,
+    voice: {
+      enabled: true,
+      defaultModeId: 'default',
+    },
+  },
+]
 
 export function getAgentProviderDefinition(provider: string): AgentProviderDefinition {
-  const definition = AGENT_PROVIDER_DEFINITIONS.find((entry) => entry.id === provider);
+  const definition = AGENT_PROVIDER_DEFINITIONS.find((entry) => entry.id === provider)
   if (!definition) {
-    throw new Error(`Unknown agent provider: ${provider}`);
+    throw new Error(`Unknown agent provider: ${provider}`)
   }
-  return definition;
+  return definition
 }
 
-export const AGENT_PROVIDER_IDS = AGENT_PROVIDER_DEFINITIONS.map((d) => d.id) as [string, ...string[]];
+export const AGENT_PROVIDER_IDS = AGENT_PROVIDER_DEFINITIONS.map((d) => d.id) as [
+  string,
+  ...string[],
+]
 
-export const AgentProviderSchema = z.enum(AGENT_PROVIDER_IDS);
+export const AgentProviderSchema = z.enum(AGENT_PROVIDER_IDS)
 
 export function isValidAgentProvider(value: string): boolean {
-  return AGENT_PROVIDER_IDS.includes(value);
+  return AGENT_PROVIDER_IDS.includes(value)
 }

@@ -1,11 +1,10 @@
-import { useCallback, useRef, useState } from "react";
-import { Alert, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, Text, View } from "react-native";
 import { StyleSheet, UnistylesRuntime, useUnistyles } from "react-native-unistyles";
 import { Link2 } from "lucide-react-native";
-import { useDaemonRegistry, type HostProfile } from "@/contexts/daemon-registry-context";
-import { normalizeHostPort } from "@/utils/daemon-endpoints";
+import { MANAGED_DIRECT_ENDPOINT, useDaemonRegistry, type HostProfile } from "@/contexts/daemon-registry-context";
 import { DaemonConnectionTestError, probeConnection } from "@/utils/test-daemon-connection";
-import { AdaptiveModalSheet, AdaptiveTextInput } from "./adaptive-modal-sheet";
+import { AdaptiveModalSheet } from "./adaptive-modal-sheet";
 import { Button } from "@/components/ui/button";
 
 const styles = StyleSheet.create((theme) => ({
@@ -16,15 +15,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
-  },
-  input: {
-    backgroundColor: theme.colors.surface2,
-    borderRadius: theme.borderRadius.lg,
-    paddingHorizontal: theme.spacing[4],
-    paddingVertical: theme.spacing[3],
-    color: theme.colors.foreground,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
   },
   actions: {
     flexDirection: "row",
@@ -40,10 +30,6 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
   },
 }));
-
-function isHostPortOnly(raw: string): boolean {
-  return !raw.includes("://") && !raw.includes("/");
-}
 
 function normalizeTransportMessage(message: string | null | undefined): string | null {
   if (!message) return null;
@@ -132,48 +118,24 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved, targetServer
   const { daemons, upsertDirectConnection } = useDaemonRegistry();
   const isMobile =
     UnistylesRuntime.breakpoint === "xs" || UnistylesRuntime.breakpoint === "sm";
-
-  const hostInputRef = useRef<TextInput>(null);
-
-  const [endpointRaw, setEndpointRaw] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const handleClose = useCallback(() => {
     if (isSaving) return;
-    setEndpointRaw("");
     setErrorMessage("");
     onClose();
   }, [isSaving, onClose]);
 
   const handleCancel = useCallback(() => {
     if (isSaving) return;
-    setEndpointRaw("");
     setErrorMessage("");
     (onCancel ?? onClose)();
   }, [isSaving, onCancel, onClose]);
 
   const handleSave = useCallback(async () => {
     if (isSaving) return;
-
-    const raw = endpointRaw.trim();
-    if (!raw) {
-      setErrorMessage("Host is required");
-      return;
-    }
-    if (!isHostPortOnly(raw)) {
-      setErrorMessage("Enter host:port only (no ws://, no /ws)");
-      return;
-    }
-
-    let endpoint: string;
-    try {
-      endpoint = normalizeHostPort(raw);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Invalid host:port";
-      setErrorMessage(message);
-      return;
-    }
+    const endpoint = MANAGED_DIRECT_ENDPOINT;
 
     try {
       setIsSaving(true);
@@ -213,28 +175,20 @@ export function AddHostModal({ visible, onClose, onCancel, onSaved, targetServer
     } finally {
       setIsSaving(false);
     }
-  }, [daemons, endpointRaw, handleClose, isMobile, isSaving, onSaved, targetServerId, upsertDirectConnection]);
+  }, [daemons, handleClose, isMobile, isSaving, onSaved, targetServerId, upsertDirectConnection]);
+
+  useEffect(() => {
+    if (!visible || isSaving || errorMessage) return;
+    void handleSave();
+  }, [errorMessage, handleSave, isSaving, visible]);
 
   return (
     <AdaptiveModalSheet title="Direct connection" visible={visible} onClose={handleClose} testID="add-host-modal">
-      <Text style={styles.helper}>Connect to a daemon by entering host:port.</Text>
+      <Text style={styles.helper}>Using configured endpoint: {MANAGED_DIRECT_ENDPOINT}</Text>
 
       <View style={styles.field}>
         <Text style={styles.label}>Host</Text>
-        <AdaptiveTextInput
-          ref={hostInputRef}
-          value={endpointRaw}
-          onChangeText={setEndpointRaw}
-          placeholder="host:6767"
-          placeholderTextColor={theme.colors.foregroundMuted}
-          style={styles.input}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          editable={!isSaving}
-          returnKeyType="done"
-          onSubmitEditing={() => void handleSave()}
-        />
+        <Text style={styles.helper}>{MANAGED_DIRECT_ENDPOINT}</Text>
         {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
       </View>
 

@@ -21,7 +21,13 @@ type AgentStoragePersistence = Pick<AgentStorage, "applySnapshot" | "list">;
 type AgentManagerStateSource = Pick<AgentManager, "subscribe">;
 
 function isKnownProvider(provider: string): provider is AgentProvider {
-  return provider === "claude" || provider === "codex" || provider === "opencode";
+  return (
+    provider === "claude" ||
+    provider === "codex" ||
+    provider === "deepinfra" ||
+    provider === "opencode" ||
+    provider === "nanoclaw"
+  );
 }
 
 /**

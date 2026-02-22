@@ -5,10 +5,14 @@ import { promises } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  HOOK_EVENTS,
   query,
   type AgentDefinition,
   type CanUseTool,
+  type HookCallbackMatcher,
+  type HookEvent,
   type McpServerConfig as ClaudeSdkMcpServerConfig,
+  type McpServerStatus,
   type ModelInfo,
   type Options,
   type PermissionMode,
@@ -16,6 +20,7 @@ import {
   type PermissionUpdate,
   type Query,
   type SpawnOptions,
+  type SdkPluginConfig,
   type SDKMessage,
   type SDKPartialAssistantMessage,
   type SDKResultMessage,
@@ -57,6 +62,11 @@ import type {
   McpServerConfig,
   PersistedAgentDescriptor,
 } from "../agent-sdk-types.js";
+import {
+  buildMem0ScopedUserId,
+  searchMemories,
+  storeMemory,
+} from "../mem0-integration.js";
 import {
   applyProviderEnv,
   isProviderCommandAvailable,
@@ -159,6 +169,41 @@ function pickSupportedModelId(
   return supportedModelIds.has(normalizedCandidate) ? normalizedCandidate : null;
 }
 
+function inferClaudeAliasFromRuntimeModelId(
+  runtimeModelId: string
+): "sonnet" | "opus" | "haiku" | null {
+  const lowerRuntimeModel = runtimeModelId.trim().toLowerCase();
+  if (!lowerRuntimeModel) {
+    return null;
+  }
+  if (lowerRuntimeModel.includes("sonnet")) {
+    return "sonnet";
+  }
+  if (lowerRuntimeModel.includes("opus")) {
+    return "opus";
+  }
+  if (lowerRuntimeModel.includes("haiku")) {
+    return "haiku";
+  }
+  return null;
+}
+
+function pickConfiguredOrCurrentAlias(
+  alias: "sonnet" | "opus" | "haiku",
+  configuredModelId: string | null | undefined,
+  currentModelId: string | null | undefined
+): string | null {
+  const configured = normalizeModelIdCandidate(configuredModelId);
+  if (configured && inferClaudeAliasFromRuntimeModelId(configured) === alias) {
+    return configured;
+  }
+  const current = normalizeModelIdCandidate(currentModelId);
+  if (current && inferClaudeAliasFromRuntimeModelId(current) === alias) {
+    return current;
+  }
+  return alias;
+}
+
 export function normalizeClaudeRuntimeModelId(
   options: NormalizeClaudeRuntimeModelIdOptions
 ): string {
@@ -167,13 +212,22 @@ export function normalizeClaudeRuntimeModelId(
     return runtimeModel;
   }
 
+  const inferredAlias = inferClaudeAliasFromRuntimeModelId(runtimeModel);
   const supportedModelIds = options.supportedModelIds;
   if (!supportedModelIds || supportedModelIds.size === 0) {
+    if (inferredAlias) {
+      return (
+        pickConfiguredOrCurrentAlias(
+          inferredAlias,
+          options.configuredModelId,
+          options.currentModelId
+        ) ?? runtimeModel
+      );
+    }
     return runtimeModel;
   }
 
-  const lowerRuntimeModel = runtimeModel.toLowerCase();
-  if (lowerRuntimeModel.includes("sonnet")) {
+  if (inferredAlias === "sonnet") {
     const explicitSonnet = pickSupportedModelId(supportedModelIds, "sonnet");
     if (explicitSonnet) {
       return explicitSonnet;
@@ -183,13 +237,13 @@ export function normalizeClaudeRuntimeModelId(
       return defaultAlias;
     }
   }
-  if (lowerRuntimeModel.includes("opus")) {
+  if (inferredAlias === "opus") {
     const alias = pickSupportedModelId(supportedModelIds, "opus");
     if (alias) {
       return alias;
     }
   }
-  if (lowerRuntimeModel.includes("haiku")) {
+  if (inferredAlias === "haiku") {
     const alias = pickSupportedModelId(supportedModelIds, "haiku");
     if (alias) {
       return alias;
@@ -277,6 +331,23 @@ type ClaudeAgentConfig = AgentSessionConfig & { provider: "claude" };
 export type ClaudeContentChunk = { type: string; [key: string]: any };
 
 type ClaudeOptions = Options;
+type ClaudeExtraOptions = Pick<
+  ClaudeOptions,
+  | "allowedTools"
+  | "disallowedTools"
+  | "hooks"
+  | "plugins"
+  | "permissionPromptToolName"
+  | "allowDangerouslySkipPermissions"
+  | "sandbox"
+  | "tools"
+  | "maxThinkingTokens"
+  | "maxTurns"
+  | "maxBudgetUsd"
+  | "betas"
+  | "strictMcpConfig"
+  | "fallbackModel"
+>;
 
 type ClaudeAgentClientOptions = {
   defaults?: { agents?: Record<string, AgentDefinition> };
@@ -379,6 +450,12 @@ type ClaudeOptionsLogSummary = {
   hasCanUseTool: boolean;
   hasSpawnOverride: boolean;
   hasStderrHandler: boolean;
+  allowedToolsCount: number;
+  disallowedToolsCount: number;
+  hookEventCount: number;
+  pluginCount: number;
+  permissionPromptToolName: string | null;
+  allowDangerouslySkipPermissions: boolean;
 };
 
 function summarizeClaudeOptionsForLog(options: ClaudeOptions): ClaudeOptionsLogSummary {
@@ -407,6 +484,19 @@ function summarizeClaudeOptionsForLog(options: ClaudeOptions): ClaudeOptionsLogS
   const mcpServerNames = options.mcpServers
     ? Object.keys(options.mcpServers).sort()
     : [];
+  const hookEventCount = options.hooks
+    ? Object.keys(options.hooks).length
+    : 0;
+  const pluginCount = Array.isArray(options.plugins)
+    ? options.plugins.length
+    : 0;
+  const allowedToolsCount = Array.isArray(options.allowedTools)
+    ? options.allowedTools.length
+    : 0;
+  const disallowedToolsCount = Array.isArray(options.disallowedTools)
+    ? options.disallowedTools.length
+    : 0;
+  const permissionPromptToolName = readTrimmedString(options.permissionPromptToolName) ?? null;
 
   return {
     cwd: typeof options.cwd === "string" ? options.cwd : null,
@@ -434,6 +524,12 @@ function summarizeClaudeOptionsForLog(options: ClaudeOptions): ClaudeOptionsLogS
     hasCanUseTool: typeof options.canUseTool === "function",
     hasSpawnOverride: typeof options.spawnClaudeCodeProcess === "function",
     hasStderrHandler: typeof options.stderr === "function",
+    allowedToolsCount,
+    disallowedToolsCount,
+    hookEventCount,
+    pluginCount,
+    permissionPromptToolName,
+    allowDangerouslySkipPermissions: options.allowDangerouslySkipPermissions === true,
   };
 }
 
@@ -617,6 +713,615 @@ function readTrimmedString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function pushClaudeExtraIssue(
+  issues: string[] | undefined,
+  message: string
+): void {
+  issues?.push(message);
+}
+
+function readStringArray(
+  value: unknown,
+  fieldPath: string,
+  issues?: string[],
+  options?: { allowEmpty?: boolean }
+): string[] | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    pushClaudeExtraIssue(issues, `${fieldPath} must be an array of strings`);
+    return undefined;
+  }
+
+  if (value.length === 0) {
+    return options?.allowEmpty === true ? [] : undefined;
+  }
+
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    const normalized = readTrimmedString(entry);
+    if (!normalized) {
+      pushClaudeExtraIssue(
+        issues,
+        `${fieldPath}[${index}] must be a non-empty string`
+      );
+      continue;
+    }
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    deduped.push(normalized);
+  }
+
+  if (deduped.length === 0) {
+    return undefined;
+  }
+  return deduped;
+}
+
+function readPositiveNumber(
+  value: unknown,
+  fieldPath: string,
+  issues?: string[]
+): number | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    pushClaudeExtraIssue(issues, `${fieldPath} must be a positive number`);
+    return undefined;
+  }
+  return value;
+}
+
+function readNonNegativeNumber(
+  value: unknown,
+  fieldPath: string,
+  issues?: string[]
+): number | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    pushClaudeExtraIssue(issues, `${fieldPath} must be a non-negative number`);
+    return undefined;
+  }
+  return value;
+}
+
+function readBoolean(
+  value: unknown,
+  fieldPath: string,
+  issues?: string[]
+): boolean | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (typeof value !== "boolean") {
+    pushClaudeExtraIssue(issues, `${fieldPath} must be a boolean`);
+    return undefined;
+  }
+  return value;
+}
+
+const SUPPORTED_CLAUDE_EXTRA_KEYS = new Set<keyof ClaudeExtraOptions>([
+  "allowedTools",
+  "disallowedTools",
+  "hooks",
+  "plugins",
+  "permissionPromptToolName",
+  "allowDangerouslySkipPermissions",
+  "sandbox",
+  "tools",
+  "maxThinkingTokens",
+  "maxTurns",
+  "maxBudgetUsd",
+  "betas",
+  "strictMcpConfig",
+  "fallbackModel",
+]);
+
+const CLAUDE_HOOK_EVENT_NAMES = new Set<string>(HOOK_EVENTS);
+
+function sanitizeClaudePluginConfigs(
+  value: unknown,
+  issues?: string[]
+): SdkPluginConfig[] | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    pushClaudeExtraIssue(
+      issues,
+      "extra.claude.plugins must be an array of { type: 'local', path: string }"
+    );
+    return undefined;
+  }
+  if (value.length === 0) {
+    return [];
+  }
+
+  const plugins: SdkPluginConfig[] = [];
+  for (const [index, entry] of value.entries()) {
+    if (!isMetadata(entry)) {
+      pushClaudeExtraIssue(
+        issues,
+        `extra.claude.plugins[${index}] must be an object`
+      );
+      continue;
+    }
+    const type = readTrimmedString(entry.type);
+    const pluginPath = readTrimmedString(entry.path);
+    if (type !== "local" || !pluginPath) {
+      pushClaudeExtraIssue(
+        issues,
+        `extra.claude.plugins[${index}] must include type='local' and a non-empty path`
+      );
+      continue;
+    }
+    plugins.push({ type: "local", path: pluginPath });
+  }
+
+  return plugins.length > 0 ? plugins : undefined;
+}
+
+function sanitizeClaudeHooks(
+  value: unknown,
+  issues?: string[]
+): ClaudeExtraOptions["hooks"] | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (!isMetadata(value)) {
+    pushClaudeExtraIssue(
+      issues,
+      "extra.claude.hooks must be an object keyed by hook event"
+    );
+    return undefined;
+  }
+
+  const hooks: NonNullable<ClaudeExtraOptions["hooks"]> = {};
+  for (const [eventName, matcherList] of Object.entries(value)) {
+    if (!CLAUDE_HOOK_EVENT_NAMES.has(eventName)) {
+      pushClaudeExtraIssue(
+        issues,
+        `extra.claude.hooks.${eventName} is not a valid Claude hook event`
+      );
+      continue;
+    }
+    if (!Array.isArray(matcherList)) {
+      pushClaudeExtraIssue(
+        issues,
+        `extra.claude.hooks.${eventName} must be an array`
+      );
+      continue;
+    }
+    if (matcherList.length === 0) {
+      hooks[eventName as HookEvent] = [];
+      continue;
+    }
+
+    const sanitizedMatchers: HookCallbackMatcher[] = [];
+    for (const [index, candidate] of matcherList.entries()) {
+      if (!isMetadata(candidate)) {
+        pushClaudeExtraIssue(
+          issues,
+          `extra.claude.hooks.${eventName}[${index}] must be an object`
+        );
+        continue;
+      }
+      if (!Array.isArray(candidate.hooks)) {
+        pushClaudeExtraIssue(
+          issues,
+          `extra.claude.hooks.${eventName}[${index}].hooks must be an array of functions`
+        );
+        continue;
+      }
+      const hookCallbacks = candidate.hooks.filter(
+        (entry): entry is HookCallbackMatcher["hooks"][number] =>
+          typeof entry === "function"
+      );
+      if (hookCallbacks.length !== candidate.hooks.length || hookCallbacks.length === 0) {
+        pushClaudeExtraIssue(
+          issues,
+          `extra.claude.hooks.${eventName}[${index}].hooks must only contain functions`
+        );
+        continue;
+      }
+      const matcher: HookCallbackMatcher = { hooks: hookCallbacks };
+      if (typeof candidate.matcher !== "undefined") {
+        const matcherPattern = readTrimmedString(candidate.matcher);
+        if (matcherPattern) {
+          matcher.matcher = matcherPattern;
+        } else {
+          pushClaudeExtraIssue(
+            issues,
+            `extra.claude.hooks.${eventName}[${index}].matcher must be a non-empty string`
+          );
+        }
+      }
+      if (typeof candidate.timeout !== "undefined") {
+        if (
+          typeof candidate.timeout === "number" &&
+          Number.isFinite(candidate.timeout) &&
+          candidate.timeout > 0
+        ) {
+          matcher.timeout = candidate.timeout;
+        } else {
+          pushClaudeExtraIssue(
+            issues,
+            `extra.claude.hooks.${eventName}[${index}].timeout must be a positive number`
+          );
+        }
+      }
+      sanitizedMatchers.push(matcher);
+    }
+
+    if (sanitizedMatchers.length > 0) {
+      hooks[eventName as HookEvent] = sanitizedMatchers;
+    }
+  }
+
+  return Object.keys(hooks).length > 0 ? hooks : undefined;
+}
+
+function sanitizeClaudeToolsField(
+  value: unknown,
+  issues?: string[]
+): ClaudeExtraOptions["tools"] | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return [];
+    }
+    const tools = readStringArray(value, "extra.claude.tools", issues);
+    return tools;
+  }
+
+  if (
+    isMetadata(value) &&
+    value.type === "preset" &&
+    value.preset === "claude_code"
+  ) {
+    return { type: "preset", preset: "claude_code" };
+  }
+
+  pushClaudeExtraIssue(
+    issues,
+    "extra.claude.tools must be a string[] or { type: 'preset', preset: 'claude_code' }"
+  );
+  return undefined;
+}
+
+function sanitizeClaudeSandboxSettings(
+  value: unknown,
+  issues?: string[]
+): ClaudeExtraOptions["sandbox"] | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (!isMetadata(value)) {
+    pushClaudeExtraIssue(issues, "extra.claude.sandbox must be an object");
+    return undefined;
+  }
+
+  const sandbox: NonNullable<ClaudeExtraOptions["sandbox"]> = {};
+  const enabled = readBoolean(value.enabled, "extra.claude.sandbox.enabled", issues);
+  if (typeof enabled === "boolean") sandbox.enabled = enabled;
+  const autoAllowBash = readBoolean(
+    value.autoAllowBashIfSandboxed,
+    "extra.claude.sandbox.autoAllowBashIfSandboxed",
+    issues
+  );
+  if (typeof autoAllowBash === "boolean") {
+    sandbox.autoAllowBashIfSandboxed = autoAllowBash;
+  }
+  const allowUnsandboxedCommands = readBoolean(
+    value.allowUnsandboxedCommands,
+    "extra.claude.sandbox.allowUnsandboxedCommands",
+    issues
+  );
+  if (typeof allowUnsandboxedCommands === "boolean") {
+    sandbox.allowUnsandboxedCommands = allowUnsandboxedCommands;
+  }
+  const enableWeakerNestedSandbox = readBoolean(
+    value.enableWeakerNestedSandbox,
+    "extra.claude.sandbox.enableWeakerNestedSandbox",
+    issues
+  );
+  if (typeof enableWeakerNestedSandbox === "boolean") {
+    sandbox.enableWeakerNestedSandbox = enableWeakerNestedSandbox;
+  }
+
+  const excludedCommands = readStringArray(
+    value.excludedCommands,
+    "extra.claude.sandbox.excludedCommands",
+    issues,
+    { allowEmpty: true }
+  );
+  if (excludedCommands) {
+    sandbox.excludedCommands = excludedCommands;
+  }
+
+  if (typeof value.network !== "undefined") {
+    if (!isMetadata(value.network)) {
+      pushClaudeExtraIssue(issues, "extra.claude.sandbox.network must be an object");
+    } else {
+      const network: NonNullable<
+        NonNullable<ClaudeExtraOptions["sandbox"]>["network"]
+      > = {};
+      const allowedDomains = readStringArray(
+        value.network.allowedDomains,
+        "extra.claude.sandbox.network.allowedDomains",
+        issues,
+        { allowEmpty: true }
+      );
+      if (allowedDomains) network.allowedDomains = allowedDomains;
+
+      const allowUnixSockets = readStringArray(
+        value.network.allowUnixSockets,
+        "extra.claude.sandbox.network.allowUnixSockets",
+        issues,
+        { allowEmpty: true }
+      );
+      if (allowUnixSockets) network.allowUnixSockets = allowUnixSockets;
+
+      const allowAllUnixSockets = readBoolean(
+        value.network.allowAllUnixSockets,
+        "extra.claude.sandbox.network.allowAllUnixSockets",
+        issues
+      );
+      if (typeof allowAllUnixSockets === "boolean") {
+        network.allowAllUnixSockets = allowAllUnixSockets;
+      }
+
+      const allowLocalBinding = readBoolean(
+        value.network.allowLocalBinding,
+        "extra.claude.sandbox.network.allowLocalBinding",
+        issues
+      );
+      if (typeof allowLocalBinding === "boolean") {
+        network.allowLocalBinding = allowLocalBinding;
+      }
+
+      const httpProxyPort = readPositiveNumber(
+        value.network.httpProxyPort,
+        "extra.claude.sandbox.network.httpProxyPort",
+        issues
+      );
+      if (typeof httpProxyPort === "number") {
+        network.httpProxyPort = httpProxyPort;
+      }
+
+      const socksProxyPort = readPositiveNumber(
+        value.network.socksProxyPort,
+        "extra.claude.sandbox.network.socksProxyPort",
+        issues
+      );
+      if (typeof socksProxyPort === "number") {
+        network.socksProxyPort = socksProxyPort;
+      }
+
+      if (Object.keys(network).length > 0) {
+        sandbox.network = network;
+      }
+    }
+  }
+
+  if (typeof value.ignoreViolations !== "undefined") {
+    if (!isMetadata(value.ignoreViolations)) {
+      pushClaudeExtraIssue(
+        issues,
+        "extra.claude.sandbox.ignoreViolations must be an object"
+      );
+    } else {
+      const ignoreViolations: Record<string, string[]> = {};
+      for (const [ruleName, ignoredEntries] of Object.entries(value.ignoreViolations)) {
+        const normalizedEntries = readStringArray(
+          ignoredEntries,
+          `extra.claude.sandbox.ignoreViolations.${ruleName}`,
+          issues
+        );
+        if (normalizedEntries && normalizedEntries.length > 0) {
+          ignoreViolations[ruleName] = normalizedEntries;
+        }
+      }
+      if (Object.keys(ignoreViolations).length > 0) {
+        sandbox.ignoreViolations = ignoreViolations;
+      }
+    }
+  }
+
+  if (typeof value.ripgrep !== "undefined") {
+    if (!isMetadata(value.ripgrep)) {
+      pushClaudeExtraIssue(issues, "extra.claude.sandbox.ripgrep must be an object");
+    } else {
+      const command = readTrimmedString(value.ripgrep.command);
+      if (!command) {
+        pushClaudeExtraIssue(
+          issues,
+          "extra.claude.sandbox.ripgrep.command must be a non-empty string"
+        );
+      } else {
+        const ripgrep: NonNullable<NonNullable<ClaudeExtraOptions["sandbox"]>["ripgrep"]> = {
+          command,
+        };
+        const args = readStringArray(
+          value.ripgrep.args,
+          "extra.claude.sandbox.ripgrep.args",
+          issues,
+          { allowEmpty: true }
+        );
+        if (args) {
+          ripgrep.args = args;
+        }
+        sandbox.ripgrep = ripgrep;
+      }
+    }
+  }
+
+  return Object.keys(sandbox).length > 0 ? sandbox : undefined;
+}
+
+function sanitizeClaudeExtraOptionsInternal(
+  value: unknown,
+  issues?: string[]
+): ClaudeExtraOptions | undefined {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+  if (!isMetadata(value)) {
+    pushClaudeExtraIssue(issues, "extra.claude must be an object");
+    return undefined;
+  }
+
+  for (const key of Object.keys(value)) {
+    if (!SUPPORTED_CLAUDE_EXTRA_KEYS.has(key as keyof ClaudeExtraOptions)) {
+      pushClaudeExtraIssue(
+        issues,
+        `extra.claude.${key} is not supported and will be ignored`
+      );
+    }
+  }
+
+  const result: ClaudeExtraOptions = {};
+
+  const allowedTools = readStringArray(
+    value.allowedTools,
+    "extra.claude.allowedTools",
+    issues,
+    { allowEmpty: true }
+  );
+  if (allowedTools) result.allowedTools = allowedTools;
+
+  const disallowedTools = readStringArray(
+    value.disallowedTools,
+    "extra.claude.disallowedTools",
+    issues,
+    { allowEmpty: true }
+  );
+  if (disallowedTools) result.disallowedTools = disallowedTools;
+
+  const hooks = sanitizeClaudeHooks(value.hooks, issues);
+  if (hooks) result.hooks = hooks;
+
+  const plugins = sanitizeClaudePluginConfigs(value.plugins, issues);
+  if (plugins) result.plugins = plugins;
+
+  const permissionPromptToolName = readTrimmedString(value.permissionPromptToolName);
+  if (permissionPromptToolName) {
+    result.permissionPromptToolName = permissionPromptToolName;
+  } else if (typeof value.permissionPromptToolName !== "undefined") {
+    pushClaudeExtraIssue(
+      issues,
+      "extra.claude.permissionPromptToolName must be a non-empty string"
+    );
+  }
+
+  const allowDangerouslySkipPermissions = readBoolean(
+    value.allowDangerouslySkipPermissions,
+    "extra.claude.allowDangerouslySkipPermissions",
+    issues
+  );
+  if (typeof allowDangerouslySkipPermissions === "boolean") {
+    result.allowDangerouslySkipPermissions = allowDangerouslySkipPermissions;
+  }
+
+  const sandbox = sanitizeClaudeSandboxSettings(value.sandbox, issues);
+  if (sandbox) result.sandbox = sandbox;
+
+  const tools = sanitizeClaudeToolsField(value.tools, issues);
+  if (typeof tools !== "undefined") result.tools = tools;
+
+  const maxThinkingTokens = readNonNegativeNumber(
+    value.maxThinkingTokens,
+    "extra.claude.maxThinkingTokens",
+    issues
+  );
+  if (typeof maxThinkingTokens === "number") {
+    result.maxThinkingTokens = Math.floor(maxThinkingTokens);
+  }
+
+  const maxTurns = readPositiveNumber(
+    value.maxTurns,
+    "extra.claude.maxTurns",
+    issues
+  );
+  if (typeof maxTurns === "number") {
+    result.maxTurns = Math.floor(maxTurns);
+  }
+
+  const maxBudgetUsd = readPositiveNumber(
+    value.maxBudgetUsd,
+    "extra.claude.maxBudgetUsd",
+    issues
+  );
+  if (typeof maxBudgetUsd === "number") {
+    result.maxBudgetUsd = maxBudgetUsd;
+  }
+
+  const betas = readStringArray(
+    value.betas,
+    "extra.claude.betas",
+    issues,
+    { allowEmpty: true }
+  );
+  if (betas) {
+    result.betas = betas as ClaudeExtraOptions["betas"];
+  }
+
+  const strictMcpConfig = readBoolean(
+    value.strictMcpConfig,
+    "extra.claude.strictMcpConfig",
+    issues
+  );
+  if (typeof strictMcpConfig === "boolean") {
+    result.strictMcpConfig = strictMcpConfig;
+  }
+
+  const fallbackModel = readTrimmedString(value.fallbackModel);
+  if (fallbackModel) {
+    result.fallbackModel = fallbackModel;
+  } else if (typeof value.fallbackModel !== "undefined") {
+    pushClaudeExtraIssue(
+      issues,
+      "extra.claude.fallbackModel must be a non-empty string"
+    );
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+export function sanitizeClaudeExtraOptions(
+  value: unknown,
+  issues?: string[]
+): ClaudeExtraOptions | undefined {
+  return sanitizeClaudeExtraOptionsInternal(value, issues);
+}
+
+export function applyClaudePermissionSafeguards(
+  options: ClaudeExtraOptions | undefined,
+  mode: PermissionMode
+): ClaudeExtraOptions | undefined {
+  if (!options && mode !== "bypassPermissions") {
+    return undefined;
+  }
+  if (mode !== "bypassPermissions") {
+    return options ? { ...options } : undefined;
+  }
+  return {
+    ...(options ?? {}),
+    // SDK requires this flag whenever bypass mode is active.
+    allowDangerouslySkipPermissions: true,
+  };
+}
+
 function isMcpServerConfig(value: unknown): value is McpServerConfig {
   if (!isMetadata(value)) {
     return false;
@@ -647,7 +1352,10 @@ function isPermissionMode(value: string | undefined): value is PermissionMode {
   return typeof value === "string" && VALID_CLAUDE_MODES.has(value);
 }
 
-function coerceSessionMetadata(metadata: AgentMetadata | undefined): Partial<AgentSessionConfig> {
+function coerceSessionMetadata(
+  metadata: AgentMetadata | undefined,
+  logger?: Logger
+): Partial<AgentSessionConfig> {
   if (!isMetadata(metadata)) {
     return {};
   }
@@ -681,12 +1389,23 @@ function coerceSessionMetadata(metadata: AgentMetadata | undefined): Partial<Age
     result.webSearch = metadata.webSearch;
   }
   if (isMetadata(metadata.extra)) {
+    const claudeIssues: string[] = [];
     const extra: AgentSessionConfig["extra"] = {};
     if (isMetadata(metadata.extra.codex)) {
       extra.codex = metadata.extra.codex;
     }
-    if (isClaudeExtra(metadata.extra.claude)) {
-      extra.claude = metadata.extra.claude;
+    const claudeExtra = sanitizeClaudeExtraOptions(
+      metadata.extra.claude,
+      claudeIssues
+    );
+    if (claudeExtra) {
+      extra.claude = claudeExtra;
+    }
+    if (claudeIssues.length > 0 && logger) {
+      logger.warn(
+        { issues: claudeIssues },
+        "Ignored invalid Claude session metadata extra options during resume"
+      );
     }
     if (extra.codex || extra.claude) {
       result.extra = extra;
@@ -730,10 +1449,6 @@ function toClaudeSdkMcpConfig(
 
 function isClaudeContentChunk(value: unknown): value is ClaudeContentChunk {
   return isMetadata(value) && typeof value.type === "string";
-}
-
-function isClaudeExtra(value: unknown): value is Partial<ClaudeOptions> {
-  return isMetadata(value);
 }
 
 function isPermissionUpdate(value: AgentPermissionUpdate): value is PermissionUpdate {
@@ -1023,7 +1738,7 @@ class TimelineAssembler {
     runId: string | null,
     messageIdHint: string | null
   ): AgentTimelineItem[] {
-    const event = message.event as Record<string, unknown>;
+    const event = message.event as unknown as Record<string, unknown>;
     const eventType = readTrimmedString(event.type);
     const streamEventMessageId =
       this.readMessageIdFromStreamEvent(event) ?? messageIdHint;
@@ -1377,7 +2092,7 @@ export class ClaudeAgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>
   ): Promise<AgentSession> {
-    const metadata = coerceSessionMetadata(handle.metadata);
+    const metadata = coerceSessionMetadata(handle.metadata, this.logger);
     const merged: Partial<AgentSessionConfig> = { ...metadata, ...overrides };
     if (!merged.cwd) {
       throw new Error("Claude resume requires the original working directory in metadata");
@@ -1468,7 +2183,40 @@ export class ClaudeAgentClient implements AgentClient {
     if (config.provider !== "claude") {
       throw new Error(`ClaudeAgentClient received config for provider '${config.provider}'`);
     }
-    return { ...config, provider: "claude" };
+
+    const normalized: ClaudeAgentConfig = { ...config, provider: "claude" };
+    const normalizedExtra: NonNullable<AgentSessionConfig["extra"]> = {};
+
+    if (isMetadata(config.extra?.codex)) {
+      normalizedExtra.codex = config.extra.codex;
+    }
+
+    const claudeIssues: string[] = [];
+    const claudeExtra = sanitizeClaudeExtraOptions(
+      config.extra?.claude,
+      claudeIssues
+    );
+    if (claudeExtra) {
+      normalizedExtra.claude = claudeExtra;
+    }
+    if (claudeIssues.length > 0) {
+      this.logger.warn(
+        { issues: claudeIssues },
+        "Ignored invalid Claude session extra options"
+      );
+    }
+
+    if (isMetadata(config.extra?.nanoclaw)) {
+      normalizedExtra.nanoclaw = config.extra.nanoclaw;
+    }
+
+    if (Object.keys(normalizedExtra).length > 0) {
+      normalized.extra = normalizedExtra;
+    } else {
+      delete normalized.extra;
+    }
+
+    return normalized;
   }
 }
 
@@ -1554,18 +2302,83 @@ class ClaudeAgentSession implements AgentSession {
     return this.claudeSessionId;
   }
 
-  async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
-    if (this.cachedRuntimeInfo) {
-      return { ...this.cachedRuntimeInfo };
-    }
-    const info: AgentRuntimeInfo = {
+  private buildRuntimeInfoSnapshot(): AgentRuntimeInfo {
+    return {
       provider: "claude",
       sessionId: this.claudeSessionId,
       model: this.lastOptionsModel,
+      thinkingOptionId: this.config.thinkingOptionId ?? null,
       modeId: this.currentMode ?? null,
     };
-    this.cachedRuntimeInfo = info;
-    return { ...info };
+  }
+
+  private async readMcpRuntimeDiagnostics(): Promise<AgentMetadata | undefined> {
+    const configuredMcpServers = this.config.mcpServers
+      ? Object.keys(this.config.mcpServers).sort()
+      : [];
+    if (!this.query && configuredMcpServers.length === 0) {
+      return undefined;
+    }
+
+    const diagnostics: AgentMetadata = {
+      configuredMcpServers,
+      statusSource: this.query ? "query" : "config",
+    };
+
+    if (!this.query) {
+      diagnostics.statusState = "query_not_initialized";
+      return diagnostics;
+    }
+
+    try {
+      const statuses = await Promise.race<McpServerStatus[]>([
+        this.query.mcpServerStatus(),
+        new Promise<McpServerStatus[]>((_, reject) => {
+          setTimeout(() => reject(new Error("timeout")), 3_000);
+        }),
+      ]);
+
+      diagnostics.statusState = "ok";
+      diagnostics.mcpServerStatus = statuses.map((status) => ({
+        name: status.name,
+        status: status.status,
+        ...(status.serverInfo
+          ? {
+              serverInfo: {
+                name: status.serverInfo.name,
+                version: status.serverInfo.version,
+              },
+            }
+          : {}),
+        ...(typeof status.error === "string" && status.error.length > 0
+          ? { error: status.error }
+          : {}),
+      }));
+    } catch (error) {
+      diagnostics.statusState = "error";
+      diagnostics.error =
+        error instanceof Error ? error.message : deterministicStringify(error);
+    }
+
+    return diagnostics;
+  }
+
+  async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
+    if (!this.cachedRuntimeInfo) {
+      this.cachedRuntimeInfo = this.buildRuntimeInfoSnapshot();
+    }
+    const baseInfo = { ...this.cachedRuntimeInfo };
+    const mcpDiagnostics = await this.readMcpRuntimeDiagnostics();
+    if (!mcpDiagnostics) {
+      return baseInfo;
+    }
+    return {
+      ...baseInfo,
+      extra: {
+        ...(isMetadata(baseInfo.extra) ? baseInfo.extra : {}),
+        mcp: mcpDiagnostics,
+      },
+    };
   }
 
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
@@ -1593,12 +2406,7 @@ class ClaudeAgentSession implements AgentSession {
       }
     }
 
-    this.cachedRuntimeInfo = {
-      provider: "claude",
-      sessionId: this.claudeSessionId,
-      model: this.lastOptionsModel,
-      modeId: this.currentMode ?? null,
-    };
+    this.cachedRuntimeInfo = this.buildRuntimeInfoSnapshot();
 
     if (!this.claudeSessionId) {
       throw new Error("Session ID not set after run completed");
@@ -1629,6 +2437,19 @@ class ClaudeAgentSession implements AgentSession {
       return;
     }
 
+    const isSlashCommandPrompt = this.isSlashCommandPrompt(prompt);
+    const mem0UserId = buildMem0ScopedUserId(this.config.cwd);
+    const promptTextForMemory = isSlashCommandPrompt
+      ? null
+      : this.extractPromptTextForMemory(prompt);
+    const promptWithMemories =
+      !promptTextForMemory || promptTextForMemory.length === 0
+        ? prompt
+        : await this.prependRelevantMemories(prompt, {
+            query: promptTextForMemory,
+            userId: mem0UserId,
+          });
+
     await this.awaitPendingInterruptPromise();
     if (
       this.turnState === "autonomous" &&
@@ -1637,7 +2458,7 @@ class ClaudeAgentSession implements AgentSession {
       await this.transitionAutonomousToForeground();
     }
 
-    const sdkMessage = this.toSdkUserMessage(prompt);
+    const sdkMessage = this.toSdkUserMessage(promptWithMemories);
     const queue = new Pushable<AgentStreamEvent>();
     const run = this.createRun("foreground", queue);
     this.runTracker.bindIdentifiers(run, {
@@ -1656,6 +2477,7 @@ class ClaudeAgentSession implements AgentSession {
     let finishedNaturally = false;
     let cancelIssued = false;
     let queueDrainedWithoutTerminal = false;
+    let assistantTextForMemory = "";
     const turnPromise = Promise.resolve();
     this.activeTurnPromise = turnPromise;
 
@@ -1702,8 +2524,28 @@ class ClaudeAgentSession implements AgentSession {
           event.type === "turn_completed" ||
           event.type === "turn_failed" ||
           event.type === "turn_canceled";
+        if (event.type === "timeline" && event.item.type === "assistant_message") {
+          if (!assistantTextForMemory) {
+            assistantTextForMemory = event.item.text;
+          } else if (event.item.text.startsWith(assistantTextForMemory)) {
+            assistantTextForMemory = event.item.text;
+          } else {
+            assistantTextForMemory += event.item.text;
+          }
+        }
         if (isTerminalEvent) {
           finishedNaturally = true;
+          if (
+            event.type === "turn_completed" &&
+            promptTextForMemory &&
+            assistantTextForMemory.trim().length > 0
+          ) {
+            this.storeMem0Turn({
+              userText: promptTextForMemory,
+              assistantText: assistantTextForMemory,
+              userId: mem0UserId,
+            });
+          }
         }
         yield event;
         if (isTerminalEvent) {
@@ -1790,9 +2632,22 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     const normalized = isPermissionMode(modeId) ? modeId : "default";
-    const query = await this.ensureQuery();
-    await query.setPermissionMode(normalized);
+    const previousMode = this.currentMode;
+    const previousQueryRestartNeeded = this.queryRestartNeeded;
     this.currentMode = normalized;
+    if (normalized === "bypassPermissions" && this.query) {
+      // Existing queries need a restart so bypass mode picks up required SDK safety flags.
+      this.queryRestartNeeded = true;
+    }
+    try {
+      const query = await this.ensureQuery();
+      await query.setPermissionMode(normalized);
+      this.cachedRuntimeInfo = null;
+    } catch (error) {
+      this.currentMode = previousMode;
+      this.queryRestartNeeded = previousQueryRestartNeeded;
+      throw error;
+    }
   }
 
   async setModel(modelId: string | null): Promise<void> {
@@ -1823,6 +2678,7 @@ class ClaudeAgentSession implements AgentSession {
       throw new Error(`Unknown thinking option: ${normalizedThinkingOptionId}`);
     }
     this.queryRestartNeeded = true;
+    this.cachedRuntimeInfo = null;
   }
 
   getPendingPermissions(): AgentPermissionRequest[] {
@@ -1953,6 +2809,71 @@ class ClaudeAgentSession implements AgentSession {
       return null;
     }
     return parsed.commandName === REWIND_COMMAND_NAME ? parsed : null;
+  }
+
+  private isSlashCommandPrompt(prompt: AgentPromptInput): boolean {
+    return typeof prompt === "string" && this.parseSlashCommandInput(prompt) !== null;
+  }
+
+  private extractPromptTextForMemory(prompt: AgentPromptInput): string | null {
+    if (typeof prompt === "string") {
+      const normalized = prompt.trim();
+      return normalized.length > 0 ? normalized : null;
+    }
+    if (!Array.isArray(prompt)) {
+      return null;
+    }
+    const parts: string[] = [];
+    for (const chunk of prompt) {
+      if (chunk.type !== "text") {
+        continue;
+      }
+      const normalized = chunk.text.trim();
+      if (normalized.length > 0) {
+        parts.push(normalized);
+      }
+    }
+    if (parts.length === 0) {
+      return null;
+    }
+    return parts.join("\n\n");
+  }
+
+  private formatMemoryContextBlock(memories: string[]): string {
+    return `<relevant_memories>\n${memories
+      .map((entry, index) => `${index + 1}. ${entry}`)
+      .join("\n")}\n</relevant_memories>\n\n`;
+  }
+
+  private async prependRelevantMemories(
+    prompt: AgentPromptInput,
+    input: { query: string; userId: string }
+  ): Promise<AgentPromptInput> {
+    const memories = await searchMemories(this.logger, input.query, {
+      userId: input.userId,
+      limit: 5,
+      timeoutMs: 2_500,
+    });
+    if (memories.length === 0) {
+      return prompt;
+    }
+    const memoryBlock = this.formatMemoryContextBlock(memories);
+    if (typeof prompt === "string") {
+      return `${memoryBlock}${prompt}`;
+    }
+    return [{ type: "text", text: memoryBlock }, ...prompt];
+  }
+
+  private storeMem0Turn(input: {
+    userText: string;
+    assistantText: string;
+    userId: string;
+  }): void {
+    const payload = `user: ${input.userText.trim()}\nassistant: ${input.assistantText.trim()}`;
+    void storeMemory(this.logger, payload, {
+      userId: input.userId,
+      timeoutMs: 30_000,
+    });
   }
 
   private parseSlashCommandInput(text: string): SlashCommandInvocation | null {
@@ -2281,6 +3202,10 @@ class ClaudeAgentSession implements AgentSession {
     ]
       .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
       .join("\n\n");
+    const claudeExtraOptions = applyClaudePermissionSafeguards(
+      this.config.extra?.claude,
+      this.currentMode
+    );
 
     const base: ClaudeOptions = {
       cwd: this.config.cwd,
@@ -2312,7 +3237,7 @@ class ClaudeAgentSession implements AgentSession {
       // resume that session to continue the conversation history.
       ...(this.claudeSessionId ? { resume: this.claudeSessionId } : {}),
       ...(maxThinkingTokens !== undefined ? { maxThinkingTokens } : {}),
-      ...this.config.extra?.claude,
+      ...(claudeExtraOptions ?? {}),
     };
 
     if (this.config.mcpServers) {
@@ -2375,7 +3300,7 @@ class ClaudeAgentSession implements AgentSession {
       type: "user",
       message: {
         role: "user",
-        content,
+        content: content as any,
       },
       parent_tool_use_id: null,
       uuid: messageId,
@@ -3148,9 +4073,10 @@ class ClaudeAgentSession implements AgentSession {
         return [];
       }
       const actions: SubAgentActionCandidate[] = [];
-      for (const block of content) {
+      for (const rawBlock of content) {
+        const block = isClaudeContentChunk(rawBlock) ? (rawBlock as ClaudeContentChunk) : null;
         if (
-          !isClaudeContentChunk(block) ||
+          !block ||
           !(
             block.type === "tool_use" ||
             block.type === "mcp_tool_use" ||
@@ -3178,7 +4104,7 @@ class ClaudeAgentSession implements AgentSession {
         return [];
       }
       const block = isClaudeContentChunk(event.content_block)
-        ? event.content_block
+        ? (event.content_block as ClaudeContentChunk)
         : null;
       if (
         !block ||

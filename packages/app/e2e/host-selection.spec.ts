@@ -63,7 +63,7 @@ test('new agent respects serverId in the URL', async ({ page }) => {
   await expect(page.getByText('Online', { exact: true }).first()).toBeVisible({ timeout: 20000 });
 
   await page.goto(`/?serverId=${encodeURIComponent(serverId)}`);
-  await expect(page.getByText('New agent', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('New conversation', { exact: true }).first()).toBeVisible();
 
   const input = page.getByRole('textbox', { name: 'Message agent...' });
   await expect(input).toBeEditable({ timeout: 30000 });
@@ -108,7 +108,7 @@ test('new agent auto-selects first online host when no preference is stored', as
   );
 
   await page.reload();
-  await expect(page.getByText('New agent', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('New conversation', { exact: true }).first()).toBeVisible();
   await expect(page.getByText('Online', { exact: true }).first()).toBeVisible({ timeout: 20000 });
 
   // Host should be auto-selected (no manual selection required).

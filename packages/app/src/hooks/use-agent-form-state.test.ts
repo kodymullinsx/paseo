@@ -58,6 +58,14 @@ describe("useAgentFormState", () => {
         ],
       },
     ];
+    const nanoclawModels: AgentModelDefinition[] = [
+      {
+        provider: "nanoclaw",
+        id: "default",
+        label: "Sonnet 4.5",
+        isDefault: true,
+      },
+    ];
 
     it("auto-selects the model's default thinking option when none is configured", () => {
       const resolved = __private__.resolveFormState(
@@ -204,6 +212,40 @@ describe("useAgentFormState", () => {
         {
           serverId: null,
           provider: "codex",
+          modeId: "",
+          model: "",
+          thinkingOptionId: "",
+          workingDir: "",
+        },
+        new Set<string>()
+      );
+
+      expect(resolved.model).toBe("");
+    });
+
+    it("maps legacy provider-prefixed model labels to catalog ids and normalizes default to auto", () => {
+      const resolved = __private__.resolveFormState(
+        undefined,
+        {
+          provider: "nanoclaw",
+          providerPreferences: {
+            nanoclaw: {
+              model: "Nanoclaw Sonnet 4.5",
+            },
+          },
+        },
+        nanoclawModels,
+        {
+          serverId: false,
+          provider: false,
+          modeId: false,
+          model: false,
+          thinkingOptionId: false,
+          workingDir: false,
+        },
+        {
+          serverId: null,
+          provider: "nanoclaw",
           modeId: "",
           model: "",
           thinkingOptionId: "",

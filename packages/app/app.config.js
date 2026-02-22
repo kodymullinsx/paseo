@@ -98,7 +98,7 @@ export default {
     },
     web: {
       output: "single",
-      favicon: "./assets/images/favicon.png",
+      favicon: "./assets/images/openclaw-logo.svg",
     },
     plugins: [
       "expo-router",
