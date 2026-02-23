@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { listDirectoryEntries } from "./service.js";
+import { listDirectoryEntries, readExplorerFile } from "./service.js";
 
 async function createTempDir(prefix: string): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), prefix));
@@ -29,6 +29,51 @@ describe("file explorer service", () => {
       expect(names).not.toContain("AGENTS.md");
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects reading files through symlinks that escape the workspace root", async () => {
+    const root = await createTempDir("paseo-file-explorer-root-");
+    const outside = await createTempDir("paseo-file-explorer-outside-");
+
+    try {
+      const outsideFile = path.join(outside, "secret.txt");
+      await writeFile(outsideFile, "top-secret", "utf-8");
+      await symlink(outsideFile, path.join(root, "escape.txt"));
+
+      await expect(
+        readExplorerFile({
+          root,
+          relativePath: "escape.txt",
+        })
+      ).rejects.toThrow("Access outside of agent workspace is not allowed");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("does not expose escaping symlinks in directory listings", async () => {
+    const root = await createTempDir("paseo-file-explorer-root-");
+    const outside = await createTempDir("paseo-file-explorer-outside-");
+
+    try {
+      const outsideFile = path.join(outside, "secret.txt");
+      await writeFile(outsideFile, "top-secret", "utf-8");
+      await symlink(outsideFile, path.join(root, "escape.txt"));
+      await writeFile(path.join(root, "inside.txt"), "ok", "utf-8");
+
+      const result = await listDirectoryEntries({
+        root,
+        relativePath: ".",
+      });
+
+      const names = result.entries.map((entry) => entry.name);
+      expect(names).toContain("inside.txt");
+      expect(names).not.toContain("escape.txt");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
     }
   });
 });

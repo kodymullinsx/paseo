@@ -42,7 +42,8 @@ export interface ExplorerCheckoutContext {
   isGit: boolean;
 }
 
-export const DEFAULT_EXPLORER_SIDEBAR_WIDTH = Platform.OS === "web" ? 640 : 400;
+const LEGACY_WEB_EXPLORER_SIDEBAR_WIDTH = 640;
+export const DEFAULT_EXPLORER_SIDEBAR_WIDTH = Platform.OS === "web" ? 520 : 400;
 export const MIN_EXPLORER_SIDEBAR_WIDTH = 280;
 // Upper bound is intentionally generous; desktop resizing enforces a min-chat-width constraint.
 export const MAX_EXPLORER_SIDEBAR_WIDTH = 2000;
@@ -336,7 +337,7 @@ export const usePanelStore = create<PanelState>()(
     }),
     {
       name: "panel-state",
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => AsyncStorage),
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<PanelState> & Record<string, unknown>;
@@ -381,6 +382,16 @@ export const usePanelStore = create<PanelState>()(
             next[key] = value;
           }
           state.explorerTabByCheckout = next;
+        }
+
+        if (version < 5) {
+          if (
+            Platform.OS === "web" &&
+            typeof state.explorerWidth === "number" &&
+            state.explorerWidth >= LEGACY_WEB_EXPLORER_SIDEBAR_WIDTH
+          ) {
+            state.explorerWidth = DEFAULT_EXPLORER_SIDEBAR_WIDTH;
+          }
         }
 
         state.activeExplorerCheckout = null;

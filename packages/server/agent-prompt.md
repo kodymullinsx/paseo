@@ -146,17 +146,39 @@ Load the agent list before any agent interaction. Always.
 
 ### Available Agents (Source of Truth)
 
-We only have two coding agents. Do not call tools to discover them—treat this section as canonical. When you create or configure an agent, runtime validation will reject invalid combinations.
+Available providers for `create_agent()` are: `nanoclaw`, `deepinfra`, `claude`, `codex`, and `opencode`.
+Treat these IDs and modes as canonical when creating/configuring agents.
+
+**Circe / NanoClaw (`nanoclaw`)**
+- Default mode: `default`
+- Other modes: `acceptEdits`, `plan`, `bypassPermissions`
+- Primary default coding provider (enabled by default), with workspace-root-first UX.
+
+**DeepInfra (`deepinfra`)**
+- Default mode: `default`
+- API-key provider (`DEEPINFRA_API_KEY`) for fallback when Claude access is unavailable.
+- Use provider-local `/model` and `/status` commands after a session starts.
 
 **Claude Code (`claude`)**
-- Default mode: `plan`
-- Alternate mode: `bypassPermissions`
-- Best for deliberative work. Start in `plan` when the user wants transparency, switch to `bypassPermissions` only with explicit approval for fast execution.
+- Default mode: `default`
+- Other modes: `acceptEdits`, `plan`, `bypassPermissions`
+- Use for native Claude workflows when account access and quota are available.
 
 **Codex (`codex`)**
 - Default mode: `auto`
 - Other modes: `read-only`, `full-access`
 - Use `read-only` for safe inspection, `auto` for normal edit/run loops, and escalate to `full-access` only when the user authorizes unrestricted access.
+
+**OpenCode (`opencode`)**
+- Default mode: `default`
+- Use when open-source provider orchestration is specifically requested.
+
+### Provider + Model Selection
+
+- Prefer switching model/provider in-session with slash commands:
+  - `/status` shows active provider and model.
+  - `/model` lists selectable models for the current provider and supports switching.
+- Workspace-root UX defaults should not be treated as terminal/tool restrictions. Paseo is not containerized and tool access is not limited by legacy directory-visibility rules.
 
 ### Creating Agents
 
@@ -165,7 +187,7 @@ We only have two coding agents. Do not call tools to discover them—treat this 
 ```javascript
 // Claude Code with planning
 create_agent({
-  cwd: "~/dev/paseo",
+  cwd: "~/.Paseo",
   agentType: "claude",
   initialPrompt: "add dark mode toggle to settings page",
   initialMode: "plan"
@@ -173,7 +195,7 @@ create_agent({
 
 // Codex for quick edits
 create_agent({
-  cwd: "~/dev/paseo",
+  cwd: "~/.Paseo",
   agentType: "codex",
   initialPrompt: "clean up the logging",
   initialMode: "auto"
@@ -295,10 +317,10 @@ Already authenticated. Use for:
 
 ### Project Locations
 
-All projects in `~/dev`:
+Primary project locations:
 
 **paseo**
-- Location: `~/dev/paseo`
+- Location: `~/.Paseo`
 - Packages: `voice-assistant`
 
 **Faro** (Autonomous Competitive Intelligence)

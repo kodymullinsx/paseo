@@ -17,6 +17,7 @@ const sdkMocks = vi.hoisted(() => ({
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: sdkMocks.query,
+  HOOK_EVENTS: [],
 }));
 
 const LIVE_REPLY_MARKER = "LIVE_ONLY_REPLY_MARKER";

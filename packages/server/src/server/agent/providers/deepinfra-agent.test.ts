@@ -12,8 +12,8 @@ describe("DeepInfraAgentClient", () => {
   });
 
   afterEach(() => {
-    process.env.DEEPINFRA_API_KEY = undefined;
-    process.env.DEEPINFRA_API_BASE_URL = undefined;
+    delete process.env.DEEPINFRA_API_KEY;
+    delete process.env.DEEPINFRA_API_BASE_URL;
     vi.restoreAllMocks();
     globalThis.fetch = ORIGINAL_FETCH;
   });
@@ -105,5 +105,49 @@ describe("DeepInfraAgentClient", () => {
     const runtime = await session.getRuntimeInfo();
     expect(runtime.provider).toBe("deepinfra");
     expect(runtime.model).toBe("Qwen/Qwen3-235B-A22B-Thinking-2507");
+  });
+
+  it("lists models when API base URL already includes /v1/openai", async () => {
+    process.env.DEEPINFRA_API_BASE_URL = "https://api.deepinfra.com/v1/openai";
+    const fetchMock = vi
+      .fn(async (url: string | URL) => {
+        if (String(url) === "https://api.deepinfra.com/v1/openai/models") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [
+                { id: "deepseek-ai/DeepSeek-V3.2" },
+                { id: "Qwen/Qwen3-235B-A22B-Instruct-2507" },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+        };
+      })
+      .mockName("fetch");
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new DeepInfraAgentClient(createTestLogger());
+    const models = await client.listModels();
+    const requestedUrls = fetchMock.mock.calls.map(([url]) => String(url));
+
+    expect(models.map((model) => model.id)).toEqual([
+      "deepseek-ai/DeepSeek-V3.2",
+      "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    ]);
+    expect(requestedUrls).toContain("https://api.deepinfra.com/v1/openai/models");
+    expect(requestedUrls).not.toContain("https://api.deepinfra.com/v1/openai/v1/openai/models");
+  });
+
+  it("reports unavailable when API key is missing", async () => {
+    delete process.env.DEEPINFRA_API_KEY;
+    const client = new DeepInfraAgentClient(createTestLogger());
+    await expect(client.isAvailable()).resolves.toBe(false);
   });
 });

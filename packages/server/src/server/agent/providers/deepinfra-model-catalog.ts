@@ -153,8 +153,8 @@ export async function listDeepInfraModels(options?: {
     DEFAULT_DEEPINFRA_BASE_URL
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const fetchImpl = options?.fetchImpl ?? fetch
-  const providerId = normalizeOptional(options?.providerId) ?? 'opencode'
-  const modelIdPrefix = options?.modelIdPrefix ?? 'deepinfra/'
+  const providerId = normalizeOptional(options?.providerId) ?? 'deepinfra'
+  const modelIdPrefix = options?.modelIdPrefix ?? ''
   const urls = buildCandidateUrls(modelListUrl, baseUrl)
 
   let lastError: Error | null = null

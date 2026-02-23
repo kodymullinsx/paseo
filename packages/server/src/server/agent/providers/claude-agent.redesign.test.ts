@@ -12,6 +12,7 @@ const sdkMocks = vi.hoisted(() => ({
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: sdkMocks.query,
+  HOOK_EVENTS: [],
 }));
 
 type QueryMock = {

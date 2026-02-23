@@ -45,10 +45,10 @@ describe('listDeepInfraModels', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(models.map((model) => model.id)).toEqual([
-      'deepinfra/meta-llama/Meta-Llama-3.1-8B-Instruct',
-      'deepinfra/Qwen/Qwen3-235B-A22B-Thinking-2507',
+      'meta-llama/Meta-Llama-3.1-8B-Instruct',
+      'Qwen/Qwen3-235B-A22B-Thinking-2507',
     ])
-    expect(models.every((model) => model.provider === 'opencode')).toBe(true)
+    expect(models.every((model) => model.provider === 'deepinfra')).toBe(true)
   })
 
   test('falls back across candidate endpoints', async () => {
@@ -69,7 +69,7 @@ describe('listDeepInfraModels', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     expect(models).toHaveLength(1)
-    expect(models[0]?.id).toBe('deepinfra/mistralai/Mistral-Small-24B-Instruct-2501')
+    expect(models[0]?.id).toBe('mistralai/Mistral-Small-24B-Instruct-2501')
   })
 
   test('supports first-class deepinfra provider ids without prefix', async () => {

@@ -14,16 +14,15 @@ import {
   usePanelStore,
   MIN_EXPLORER_SIDEBAR_WIDTH,
   MAX_EXPLORER_SIDEBAR_WIDTH,
-  type ExplorerTab,
 } from "@/stores/panel-store";
 import { useExplorerSidebarAnimation } from "@/contexts/explorer-sidebar-animation-context";
 import { HEADER_INNER_HEIGHT } from "@/constants/layout";
-import { GitDiffPane } from "./git-diff-pane";
-import { FileExplorerPane } from "./file-explorer-pane";
-import { TerminalPane } from "./terminal-pane";
+import { useSessionStore, selectAgentArtifacts } from "@/stores/session-store";
+import { ArtifactPane } from "./artifact-pane";
 
-const MIN_CHAT_WIDTH = 400;
+const MIN_CHAT_WIDTH = 480;
 const IOS_KEYBOARD_INSET_MIN_HEIGHT = 120;
+const DESKTOP_LEFT_SIDEBAR_WIDTH = 320;
 const IS_DEV = Boolean((globalThis as { __DEV__?: boolean }).__DEV__);
 
 function logExplorerSidebar(event: string, details: Record<string, unknown>): void {
@@ -50,17 +49,15 @@ interface ExplorerSidebarProps {
   isGit: boolean;
 }
 
-export function ExplorerSidebar({ serverId, agentId, cwd, isGit }: ExplorerSidebarProps) {
-  const { theme } = useUnistyles();
+export function ExplorerSidebar({ serverId, agentId, cwd: _cwd, isGit: _isGit }: ExplorerSidebarProps) {
   const insets = useSafeAreaInsets();
   const isMobile =
     UnistylesRuntime.breakpoint === "xs" || UnistylesRuntime.breakpoint === "sm";
   const mobileView = usePanelStore((state) => state.mobileView);
   const desktopFileExplorerOpen = usePanelStore((state) => state.desktop.fileExplorerOpen);
+  const desktopAgentListOpen = usePanelStore((state) => state.desktop.agentListOpen);
   const closeToAgent = usePanelStore((state) => state.closeToAgent);
-  const explorerTab = usePanelStore((state) => state.explorerTab);
   const explorerWidth = usePanelStore((state) => state.explorerWidth);
-  const setExplorerTabForCheckout = usePanelStore((state) => state.setExplorerTabForCheckout);
   const setExplorerWidth = usePanelStore((state) => state.setExplorerWidth);
   const { width: viewportWidth } = useWindowDimensions();
   const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
@@ -76,14 +73,16 @@ export function ExplorerSidebar({ serverId, agentId, cwd, isGit }: ExplorerSideb
     if (isMobile) {
       return;
     }
+    const availableViewportWidth =
+      viewportWidth - (desktopAgentListOpen ? DESKTOP_LEFT_SIDEBAR_WIDTH : 0);
     const maxWidth = Math.max(
       MIN_EXPLORER_SIDEBAR_WIDTH,
-      Math.min(MAX_EXPLORER_SIDEBAR_WIDTH, viewportWidth - MIN_CHAT_WIDTH)
+      Math.min(MAX_EXPLORER_SIDEBAR_WIDTH, availableViewportWidth - MIN_CHAT_WIDTH)
     );
     if (explorerWidth > maxWidth) {
       setExplorerWidth(maxWidth);
     }
-  }, [explorerWidth, isMobile, setExplorerWidth, viewportWidth]);
+  }, [desktopAgentListOpen, explorerWidth, isMobile, setExplorerWidth, viewportWidth]);
 
   // Derive isOpen from the unified panel state
   const isOpen = isMobile ? mobileView === "file-explorer" : desktopFileExplorerOpen;
@@ -116,13 +115,6 @@ export function ExplorerSidebar({ serverId, agentId, cwd, isGit }: ExplorerSideb
   );
 
   const enableSidebarCloseGesture = isMobile && isOpen;
-
-  const handleTabPress = useCallback(
-    (tab: ExplorerTab) => {
-      setExplorerTabForCheckout({ serverId, cwd, isGit, tab });
-    },
-    [cwd, isGit, serverId, setExplorerTabForCheckout]
-  );
 
   // Swipe gesture to close (swipe right on mobile)
   const closeGesture = useMemo(
@@ -226,9 +218,11 @@ export function ExplorerSidebar({ serverId, agentId, cwd, isGit }: ExplorerSideb
         .onUpdate((event) => {
           // Dragging left (negative translationX) increases width
           const newWidth = startWidthRef.current - event.translationX;
+          const availableViewportWidth =
+            viewportWidth - (desktopAgentListOpen ? DESKTOP_LEFT_SIDEBAR_WIDTH : 0);
           const maxWidth = Math.max(
             MIN_EXPLORER_SIDEBAR_WIDTH,
-            Math.min(MAX_EXPLORER_SIDEBAR_WIDTH, viewportWidth - MIN_CHAT_WIDTH)
+            Math.min(MAX_EXPLORER_SIDEBAR_WIDTH, availableViewportWidth - MIN_CHAT_WIDTH)
           );
           const clampedWidth = Math.max(
             MIN_EXPLORER_SIDEBAR_WIDTH,
@@ -239,7 +233,7 @@ export function ExplorerSidebar({ serverId, agentId, cwd, isGit }: ExplorerSideb
         .onEnd(() => {
           runOnJS(setExplorerWidth)(resizeWidth.value);
         }),
-    [isMobile, explorerWidth, resizeWidth, setExplorerWidth, viewportWidth]
+    [desktopAgentListOpen, isMobile, explorerWidth, resizeWidth, setExplorerWidth, viewportWidth]
   );
 
   const sidebarAnimatedStyle = useAnimatedStyle(() => ({
@@ -289,13 +283,9 @@ export function ExplorerSidebar({ serverId, agentId, cwd, isGit }: ExplorerSideb
             pointerEvents="auto"
           >
             <SidebarContent
-              activeTab={explorerTab}
-              onTabPress={handleTabPress}
               onClose={() => handleClose("header-close-button")}
               serverId={serverId}
               agentId={agentId}
-              cwd={cwd}
-              isGit={isGit}
               isMobile={isMobile}
             />
           </Animated.View>
@@ -322,13 +312,9 @@ export function ExplorerSidebar({ serverId, agentId, cwd, isGit }: ExplorerSideb
       </GestureDetector>
 
       <SidebarContent
-        activeTab={explorerTab}
-        onTabPress={handleTabPress}
         onClose={() => handleClose("desktop-close-button")}
         serverId={serverId}
         agentId={agentId}
-        cwd={cwd}
-        isGit={isGit}
         isMobile={false}
       />
     </Animated.View>
@@ -336,80 +322,29 @@ export function ExplorerSidebar({ serverId, agentId, cwd, isGit }: ExplorerSideb
 }
 
 interface SidebarContentProps {
-  activeTab: ExplorerTab;
-  onTabPress: (tab: ExplorerTab) => void;
   onClose: () => void;
   serverId: string;
   agentId: string;
-  cwd: string;
-  isGit: boolean;
   isMobile: boolean;
 }
 
 function SidebarContent({
-  activeTab,
-  onTabPress,
   onClose,
   serverId,
   agentId,
-  cwd,
-  isGit,
   isMobile,
 }: SidebarContentProps) {
   const { theme } = useUnistyles();
-  const resolvedTab: ExplorerTab =
-    !isGit && activeTab === "changes" ? "files" : activeTab;
+  const artifacts = useSessionStore((state) =>
+    selectAgentArtifacts(state, serverId, agentId)
+  );
 
   return (
     <View style={styles.sidebarContent} pointerEvents="auto">
-      {/* Header with tabs and close button */}
       <View style={styles.header} testID="explorer-header">
-        <View style={styles.tabsContainer}>
-          {isGit && (
-            <Pressable
-              testID="explorer-tab-changes"
-              style={[styles.tab, resolvedTab === "changes" && styles.tabActive]}
-              onPress={() => onTabPress("changes")}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  resolvedTab === "changes" && styles.tabTextActive,
-                ]}
-              >
-                Changes
-              </Text>
-            </Pressable>
-          )}
-          <Pressable
-            testID="explorer-tab-files"
-            style={[styles.tab, resolvedTab === "files" && styles.tabActive]}
-            onPress={() => onTabPress("files")}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                resolvedTab === "files" && styles.tabTextActive,
-              ]}
-            >
-              Files
-            </Text>
-          </Pressable>
-          <Pressable
-            testID="explorer-tab-terminals"
-            style={[styles.tab, resolvedTab === "terminals" && styles.tabActive]}
-            onPress={() => onTabPress("terminals")}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                resolvedTab === "terminals" && styles.tabTextActive,
-              ]}
-            >
-              Terminals
-            </Text>
-          </Pressable>
-        </View>
+        <Text style={[styles.headerTitle, { color: theme.colors.foreground }]}>
+          Artifacts
+        </Text>
         <View style={styles.headerRightSection}>
           {isMobile && (
             <Pressable onPress={onClose} style={styles.closeButton}>
@@ -419,17 +354,8 @@ function SidebarContent({
         </View>
       </View>
 
-      {/* Content based on active tab */}
       <View style={styles.contentArea} testID="explorer-content-area">
-        {resolvedTab === "changes" && (
-          <GitDiffPane serverId={serverId} agentId={agentId} cwd={cwd} />
-        )}
-        {resolvedTab === "files" && (
-          <FileExplorerPane serverId={serverId} agentId={agentId} />
-        )}
-        {resolvedTab === "terminals" && (
-          <TerminalPane serverId={serverId} cwd={cwd} />
-        )}
+        <ArtifactPane artifacts={artifacts} />
       </View>
     </View>
   );
@@ -479,31 +405,10 @@ const styles = StyleSheet.create((theme) => ({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
-  tabsContainer: {
-    flexDirection: "row",
-    gap: theme.spacing[1],
-  },
-  tab: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing[2],
-    paddingVertical: theme.spacing[2],
-    paddingHorizontal: theme.spacing[3],
-    borderRadius: theme.borderRadius.md,
-  },
-  tabActive: {
-    backgroundColor: theme.colors.surface2,
-  },
-  tabText: {
+  headerTitle: {
     fontSize: theme.fontSize.sm,
-    fontWeight: theme.fontWeight.normal,
-    color: theme.colors.foregroundMuted,
-  },
-  tabTextActive: {
-    color: theme.colors.foreground,
-  },
-  tabTextMuted: {
-    opacity: 0.8,
+    fontWeight: theme.fontWeight.semibold,
+    paddingHorizontal: theme.spacing[2],
   },
   headerRightSection: {
     flexDirection: "row",

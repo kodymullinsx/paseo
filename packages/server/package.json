@@ -46,6 +46,7 @@
     "speech:tts:matrix": "tsx scripts/generate-sherpa-tts-matrix.ts",
     "speech:transcribe:local": "tsx scripts/transcribe-local-wav.ts",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude 'src/**/*.e2e.test.ts' --exclude 'src/**/*.real.e2e.test.ts' --exclude 'src/**/*.smoke.test.ts' --exclude 'src/poc-commands/**' --exclude 'src/server/agent/providers/codex-app-server-agent.test.ts' --exclude 'src/server/agent/providers/opencode-agent.test.ts' --exclude 'src/server/terminal-mcp/terminal-manager.test.ts' --exclude 'src/server/voice-mcp-bridge.test.ts' --exclude 'src/server/worktree-bootstrap.test.ts' --exclude 'src/utils/worktree.test.ts'",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:e2e": "playwright test",

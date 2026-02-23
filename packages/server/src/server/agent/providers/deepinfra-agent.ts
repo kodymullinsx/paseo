@@ -78,6 +78,11 @@ function resolveDeepInfraBaseUrl(value?: string | null): string {
   return trimmed;
 }
 
+function resolveDeepInfraCatalogBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  return trimmed.replace(/\/v1\/openai$/i, "");
+}
+
 function normalizeDeepInfraModel(modelId: string | null | undefined): string | null {
   const normalized = normalizeOptional(modelId);
   if (!normalized) {
@@ -199,7 +204,7 @@ async function resolveDefaultDeepInfraModel(options: {
 
   const models = await listDeepInfraModels({
     apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
+    baseUrl: resolveDeepInfraCatalogBaseUrl(options.baseUrl),
     providerId: DEEPINFRA_PROVIDER,
     modelIdPrefix: "",
   });
@@ -535,7 +540,7 @@ class DeepInfraAgentSession implements AgentSession {
     try {
       const models = await listDeepInfraModels({
         apiKey: resolveDeepInfraApiKey(undefined),
-        baseUrl: this.baseUrl,
+        baseUrl: resolveDeepInfraCatalogBaseUrl(this.baseUrl),
         providerId: DEEPINFRA_PROVIDER,
         modelIdPrefix: "",
       });
@@ -669,7 +674,7 @@ export class DeepInfraAgentClient implements AgentClient {
     const apiKey = resolveDeepInfraApiKey(undefined);
     const models = await listDeepInfraModels({
       apiKey,
-      baseUrl: this.baseUrl,
+      baseUrl: resolveDeepInfraCatalogBaseUrl(this.baseUrl),
       providerId: DEEPINFRA_PROVIDER,
       modelIdPrefix: "",
     });
@@ -690,8 +695,12 @@ export class DeepInfraAgentClient implements AgentClient {
   }
 
   async isAvailable(): Promise<boolean> {
-    resolveDeepInfraApiKey(undefined);
-    return true;
+    try {
+      resolveDeepInfraApiKey(undefined);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private assertConfig(config: AgentSessionConfig): DeepInfraAgentConfig {

@@ -26,6 +26,7 @@ import type {
 } from "@server/server/agent/agent-sdk-types";
 import type { AgentProviderDefinition } from "@server/server/agent/provider-manifest";
 import { Combobox, ComboboxItem, ComboboxEmpty } from "@/components/ui/combobox";
+import { buildProviderSelectOptions } from "@/components/agent-form/provider-select-options";
 import {
   formatModelDisplayLabel,
   normalizeSelectedModelId,
@@ -521,11 +522,7 @@ export function AgentConfigRow({
   disabled,
 }: AgentConfigRowProps): ReactElement {
   const providerOptions: ComboSelectOption[] = useMemo(
-    () =>
-      providerDefinitions.map((def) => ({
-        id: def.id,
-        label: def.label,
-      })),
+    () => buildProviderSelectOptions(providerDefinitions),
     [providerDefinitions]
   );
 
@@ -647,11 +644,7 @@ export function AssistantDropdown({
   );
 
   const options = useMemo(
-    () =>
-      providerDefinitions.map((def) => ({
-        id: def.id,
-        label: def.label,
-      })),
+    () => buildProviderSelectOptions(providerDefinitions),
     [providerDefinitions]
   );
 

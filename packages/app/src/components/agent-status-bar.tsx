@@ -11,6 +11,7 @@ import {
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useWindowDimensions } from "react-native";
 import {
   formatModelDisplayLabel,
   normalizeSelectedModelId,
@@ -25,8 +26,10 @@ interface AgentStatusBarProps {
 export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
   const { theme } = useUnistyles();
   const IS_WEB = Platform.OS === "web";
+  const { width: windowWidth } = useWindowDimensions();
   const [prefsOpen, setPrefsOpen] = useState(false);
-  const dropdownMaxWidth = IS_WEB ? 360 : undefined;
+  const dropdownMaxWidth = IS_WEB ? 300 : undefined;
+  const isCompactDesktop = IS_WEB && windowWidth < 1500;
 
   // Select only the specific agent (not all agents)
   const agent = useSessionStore((state) =>
@@ -199,7 +202,7 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {thinkingOptions && thinkingOptions.length > 1 && (
+          {thinkingOptions && thinkingOptions.length > 1 && !isCompactDesktop && (
             <DropdownMenu>
               <DropdownMenuTrigger
                 style={({ pressed, hovered, open }) => [
@@ -255,7 +258,7 @@ export function AgentStatusBar({ agentId, serverId }: AgentStatusBarProps) {
       )}
 
       {/* Mobile: preferences button opens a bottom sheet */}
-      {!IS_WEB && (
+      {(!IS_WEB || isCompactDesktop) && (
         <>
           <Pressable
             onPress={() => setPrefsOpen(true)}
@@ -407,14 +410,17 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[1],
+    flex: 1,
     minWidth: 0,
+    maxWidth: "100%",
+    overflow: "hidden",
   },
   modeBadge: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "transparent",
     gap: theme.spacing[1],
-    maxWidth: 360,
+    maxWidth: 180,
     minWidth: 0,
     flexShrink: 1,
     paddingHorizontal: theme.spacing[2],
@@ -438,12 +444,14 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.surface2,
     borderRadius: theme.borderRadius["2xl"],
     borderWidth: 1,
-    maxWidth: 180,
+    maxWidth: 110,
     minWidth: 0,
+    flexShrink: 1,
     paddingHorizontal: theme.spacing[2],
     paddingVertical: theme.spacing[1],
   },
   providerBadgeText: {
+    flexShrink: 1,
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.semibold,

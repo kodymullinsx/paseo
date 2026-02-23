@@ -24,7 +24,7 @@ import type { ProviderRuntimeSettings } from '../provider-launch-config.js'
 import { ClaudeAgentClient } from './claude-agent.js'
 
 const NANOCLAW_PROVIDER_ID = 'nanoclaw' as const
-const DEFAULT_MODE_ID = process.env.NANOCLAW_DEFAULT_MODE?.trim() || 'default'
+const DEFAULT_MODE_ID = process.env.NANOCLAW_DEFAULT_MODE?.trim() || 'bypassPermissions'
 const DEFAULT_MODEL_ID = process.env.NANOCLAW_DEFAULT_MODEL?.trim() || ''
 const SYSTEM_PROMPT_APPEND = process.env.NANOCLAW_SYSTEM_PROMPT_APPEND?.trim() || ''
 

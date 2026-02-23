@@ -2,6 +2,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const daemonClientMock = vi.hoisted(() => {
   const createdConfigs: Array<{ clientId?: string; url?: string }> = [];
+  const behavior = {
+    connectErrorMessage: null as string | null,
+    connectLastError: null as string | null,
+  };
 
   class MockDaemonClient {
     public lastError: string | null = null;
@@ -26,6 +30,10 @@ const daemonClientMock = vi.hoisted(() => {
     }
 
     async connect(): Promise<void> {
+      if (behavior.connectErrorMessage) {
+        this.lastError = behavior.connectLastError;
+        throw new Error(behavior.connectErrorMessage);
+      }
       return;
     }
 
@@ -45,6 +53,7 @@ const daemonClientMock = vi.hoisted(() => {
   return {
     MockDaemonClient,
     createdConfigs,
+    behavior,
   };
 });
 
@@ -55,6 +64,8 @@ vi.mock("@server/client/daemon-client", () => ({
 describe("test-daemon-connection probe client identity", () => {
   beforeEach(() => {
     daemonClientMock.createdConfigs.length = 0;
+    daemonClientMock.behavior.connectErrorMessage = null;
+    daemonClientMock.behavior.connectLastError = null;
   });
 
   it("uses isolated probe clientId values for direct latency probes", async () => {
@@ -75,5 +86,23 @@ describe("test-daemon-connection probe client identity", () => {
     expect(first?.clientId).toMatch(/^cid_probe_/);
     expect(second?.clientId).toMatch(/^cid_probe_/);
     expect(first?.clientId).not.toBe(second?.clientId);
+  });
+
+  it("surfaces protocol mismatch details when transport error is generic", async () => {
+    daemonClientMock.behavior.connectErrorMessage = "Transport error";
+    daemonClientMock.behavior.connectLastError = "Incompatible protocol version";
+
+    const mod = await import("./test-daemon-connection");
+
+    await expect(
+      mod.probeConnection({
+        id: "direct:lan:6767",
+        type: "direct",
+        endpoint: "lan:6767",
+      })
+    ).rejects.toMatchObject({
+      name: "DaemonConnectionTestError",
+      message: "Incompatible protocol version",
+    });
   });
 });

@@ -191,9 +191,6 @@ export function buildProviderRegistry(
   }
 }
 
-// Deprecated: Use buildProviderRegistry instead
-export const PROVIDER_REGISTRY: Record<AgentProvider, ProviderDefinition> = null as any
-
 export function createAllClients(
   logger: Logger,
   options?: BuildProviderRegistryOptions

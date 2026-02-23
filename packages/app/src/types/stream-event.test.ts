@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentStreamEventPayload } from "@server/shared/messages";
-import type { ThoughtItem } from "@/types/stream";
+import type { StreamItem, ThoughtItem } from "@/types/stream";
 import { applyStreamEvent } from "@/types/stream";
 
 const baseTimestamp = new Date(0);
@@ -167,5 +167,67 @@ describe("applyStreamEvent", () => {
     expect(result.head).toBe(head);
     expect(result.changedTail).toBe(false);
     expect(result.changedHead).toBe(false);
+  });
+
+  it("appends late assistant chunks to the previous assistant message even after optimistic user append", () => {
+    const head: StreamItem[] = [
+      {
+        kind: "assistant_message",
+        id: "assistant-1",
+        text: "Hello",
+        timestamp: baseTimestamp,
+      },
+      {
+        kind: "user_message",
+        id: "user-1",
+        text: "Can you continue?",
+        timestamp: baseTimestamp,
+      },
+    ];
+
+    const result = applyStreamEvent({
+      tail: [],
+      head,
+      event: assistantChunk(" world"),
+      timestamp: baseTimestamp,
+    });
+
+    expect(result.tail).toHaveLength(0);
+    expect(result.head).toHaveLength(2);
+    expect(result.head[0]?.kind).toBe("assistant_message");
+    expect((result.head[0] as { text: string }).text).toBe("Hello world");
+    expect(result.head[1]?.kind).toBe("user_message");
+    expect((result.head[1] as { text: string }).text).toBe("Can you continue?");
+  });
+
+  it("handles 1500 completed assistant turns without losing ordering", () => {
+    let tail: StreamItem[] = [];
+    let head: StreamItem[] = [];
+
+    for (let index = 0; index < 1500; index += 1) {
+      const chunk = applyStreamEvent({
+        tail,
+        head,
+        event: assistantChunk(`chunk-${index}`),
+        timestamp: new Date(index),
+      });
+      tail = chunk.tail;
+      head = chunk.head;
+
+      const completed = applyStreamEvent({
+        tail,
+        head,
+        event: completionEvent(),
+        timestamp: new Date(index),
+      });
+      tail = completed.tail;
+      head = completed.head;
+    }
+
+    expect(head).toHaveLength(0);
+    expect(tail).toHaveLength(1500);
+    expect(tail[0]?.kind).toBe("assistant_message");
+    expect((tail[0] as { text: string }).text).toBe("chunk-0");
+    expect((tail[1499] as { text: string }).text).toBe("chunk-1499");
   });
 });

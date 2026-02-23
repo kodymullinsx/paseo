@@ -87,6 +87,7 @@ export async function listDirectoryEntries({
   root,
   relativePath = ".",
 }: ListDirectoryParams): Promise<FileExplorerDirectory> {
+  const normalizedRoot = path.resolve(root);
   const directoryPath = await resolveScopedPath({ root, relativePath });
   const stats = await fs.stat(directoryPath);
 
@@ -104,15 +105,20 @@ export async function listDirectoryEntries({
         : "file";
       try {
         return await buildEntryPayload({
-          root,
+          root: normalizedRoot,
           targetPath,
           name: dirent.name,
           kind,
         });
       } catch (error) {
         // Directories can contain dangling links (e.g. AGENTS.md -> CLAUDE.md).
-        // Skip entries whose targets disappeared instead of failing the whole listing.
-        if (isMissingEntryError(error)) {
+        // Skip entries whose targets disappeared or escape the workspace
+        // instead of failing the whole listing.
+        if (
+          isMissingEntryError(error) ||
+          (error instanceof Error &&
+            error.message === "Access outside of agent workspace is not allowed")
+        ) {
           return null;
         }
         throw error;
@@ -225,16 +231,18 @@ async function resolveScopedPath({
 }: ScopedPathParams): Promise<string> {
   const normalizedRoot = path.resolve(root);
   const requestedPath = path.resolve(normalizedRoot, relativePath);
-  const relative = path.relative(normalizedRoot, requestedPath);
-
-  if (
-    relative === "" ||
-    (!relative.startsWith("..") && !path.isAbsolute(relative))
-  ) {
-    return requestedPath;
+  if (!isPathWithinRoot({ rootPath: normalizedRoot, candidatePath: requestedPath })) {
+    throw new Error("Access outside of agent workspace is not allowed");
   }
 
-  throw new Error("Access outside of agent workspace is not allowed");
+  const canonicalRoot = await resolveRealPathOrOriginal(normalizedRoot);
+  const canonicalRequested = await resolveRealPathOrOriginal(requestedPath);
+
+  if (!isPathWithinRoot({ rootPath: canonicalRoot, candidatePath: canonicalRequested })) {
+    throw new Error("Access outside of agent workspace is not allowed");
+  }
+
+  return requestedPath;
 }
 
 async function buildEntryPayload({
@@ -243,6 +251,10 @@ async function buildEntryPayload({
   name,
   kind,
 }: EntryPayloadParams): Promise<FileExplorerEntry> {
+  await resolveScopedPath({
+    root,
+    relativePath: path.relative(path.resolve(root), targetPath),
+  });
   const stats = await fs.stat(targetPath);
   return {
     name,
@@ -256,6 +268,25 @@ async function buildEntryPayload({
 function isMissingEntryError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code;
   return code === "ENOENT" || code === "ENOTDIR" || code === "ELOOP";
+}
+
+function isPathWithinRoot(params: { rootPath: string; candidatePath: string }): boolean {
+  const relative = path.relative(params.rootPath, params.candidatePath);
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
+async function resolveRealPathOrOriginal(candidatePath: string): Promise<string> {
+  try {
+    return await fs.realpath(candidatePath);
+  } catch (error) {
+    if (isMissingEntryError(error)) {
+      return candidatePath;
+    }
+    throw error;
+  }
 }
 
 function normalizeRelativePath({

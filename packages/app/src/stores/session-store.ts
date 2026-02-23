@@ -24,6 +24,8 @@ import type {
   ServerCapabilities,
 } from "@server/shared/messages";
 import { isPerfLoggingEnabled, measurePayload, perfLog } from "@/utils/perf";
+import type { ArtifactItem } from "@/types/artifacts";
+import { extractArtifactsFromItem } from "@/utils/artifact-extractor";
 import {
   createAgentLastActivityCoalescer,
   type AgentLastActivityCommitter,
@@ -219,6 +221,9 @@ interface SessionStoreState {
 
   // Agent activity timestamps (top-level, keyed by agentId to prevent cascade rerenders)
   agentLastActivity: Map<string, Date>;
+
+  // Extracted artifacts keyed by `${serverId}:${agentId}`
+  agentArtifacts: Map<string, ArtifactItem[]>;
 }
 
 // Action types
@@ -369,6 +374,7 @@ export const useSessionStore = create<SessionStore>()(
     return {
       sessions: {},
       agentLastActivity: new Map(),
+      agentArtifacts: new Map(),
 
     // Session management
     initializeSession: (serverId, client, audioPlayer) => {
@@ -411,10 +417,25 @@ export const useSessionStore = create<SessionStore>()(
             nextActivity = candidate;
           }
         }
+        let nextArtifacts = prev.agentArtifacts;
+        if (nextArtifacts.size > 0) {
+          const candidate = new Map(nextArtifacts);
+          let changed = false;
+          for (const key of candidate.keys()) {
+            if (key.startsWith(`${serverId}:`)) {
+              candidate.delete(key);
+              changed = true;
+            }
+          }
+          if (changed) {
+            nextArtifacts = candidate;
+          }
+        }
         return {
           ...prev,
           sessions: nextSessions,
           agentLastActivity: nextActivity,
+          agentArtifacts: nextArtifacts,
         };
       });
     },
@@ -582,6 +603,7 @@ export const useSessionStore = create<SessionStore>()(
 
     // Stream state (head/tail model)
     setAgentStreamTail: (serverId, state) => {
+      let shouldOpenArtifactPane = false;
       set((prev) => {
         const session = prev.sessions[serverId];
         if (!session) {
@@ -591,15 +613,87 @@ export const useSessionStore = create<SessionStore>()(
         if (session.agentStreamTail === nextState) {
           return prev;
         }
+
+        let nextArtifacts = prev.agentArtifacts;
+        let artifactsChanged = false;
+
+        for (const [agentId, nextTail] of nextState.entries()) {
+          const prevTail = session.agentStreamTail.get(agentId) ?? [];
+          if (prevTail === nextTail) {
+            continue;
+          }
+
+          const prevById = new Map(prevTail.map((item) => [item.id, item]));
+          const changedItems = nextTail.filter((item) => {
+            const existing = prevById.get(item.id);
+            return !existing || existing !== item;
+          });
+          if (changedItems.length === 0) {
+            continue;
+          }
+
+          const artifactKey = `${serverId}:${agentId}`;
+          const existingArtifacts = nextArtifacts.get(artifactKey) ?? [];
+          const artifactById = new Map(existingArtifacts.map((artifact) => [artifact.id, artifact]));
+
+          let localChanged = false;
+          let newArtifactCount = 0;
+          for (const item of changedItems) {
+            const extracted = extractArtifactsFromItem(item);
+            for (const artifact of extracted) {
+              const previousArtifact = artifactById.get(artifact.id);
+              if (!previousArtifact) {
+                artifactById.set(artifact.id, artifact);
+                localChanged = true;
+                newArtifactCount += 1;
+                continue;
+              }
+
+              if (
+                previousArtifact.type !== artifact.type ||
+                previousArtifact.title !== artifact.title ||
+                previousArtifact.content !== artifact.content ||
+                previousArtifact.language !== artifact.language ||
+                previousArtifact.timestamp.getTime() !== artifact.timestamp.getTime() ||
+                previousArtifact.sourceItemId !== artifact.sourceItemId
+              ) {
+                artifactById.set(artifact.id, artifact);
+                localChanged = true;
+              }
+            }
+          }
+
+          if (!localChanged) {
+            continue;
+          }
+
+          if (nextArtifacts === prev.agentArtifacts) {
+            nextArtifacts = new Map(prev.agentArtifacts);
+          }
+
+          nextArtifacts.set(artifactKey, [...artifactById.values()]);
+          artifactsChanged = true;
+          if (newArtifactCount > 0) {
+            shouldOpenArtifactPane = true;
+          }
+        }
+
         logSessionStoreUpdate("setAgentStreamTail", serverId, { agentCount: nextState.size });
         return {
           ...prev,
+          ...(artifactsChanged ? { agentArtifacts: nextArtifacts } : {}),
           sessions: {
             ...prev.sessions,
             [serverId]: { ...session, agentStreamTail: nextState },
           },
         };
       });
+
+      if (shouldOpenArtifactPane) {
+        void import("@/stores/panel-store").then(({ usePanelStore }) => {
+          usePanelStore.getState().openFileExplorer();
+        });
+      }
     },
 
     setAgentStreamHead: (serverId, state) => {
@@ -755,9 +849,28 @@ export const useSessionStore = create<SessionStore>()(
         if (session.agents === nextAgents) {
           return prev;
         }
+        let nextArtifacts = prev.agentArtifacts;
+        let artifactsChanged = false;
+        if (session.agents.size > 0) {
+          for (const agentId of session.agents.keys()) {
+            if (nextAgents.has(agentId)) {
+              continue;
+            }
+            const artifactKey = `${serverId}:${agentId}`;
+            if (!nextArtifacts.has(artifactKey)) {
+              continue;
+            }
+            if (nextArtifacts === prev.agentArtifacts) {
+              nextArtifacts = new Map(prev.agentArtifacts);
+            }
+            nextArtifacts.delete(artifactKey);
+            artifactsChanged = true;
+          }
+        }
         logSessionStoreUpdate("setAgents", serverId, { count: nextAgents.size });
         return {
           ...prev,
+          ...(artifactsChanged ? { agentArtifacts: nextArtifacts } : {}),
           sessions: {
             ...prev.sessions,
             [serverId]: { ...session, agents: nextAgents },
@@ -926,3 +1039,13 @@ export const useSessionStore = create<SessionStore>()(
   };
   })
 );
+
+const EMPTY_ARTIFACTS: ArtifactItem[] = [];
+
+export function selectAgentArtifacts(
+  state: { agentArtifacts: Map<string, ArtifactItem[]> },
+  serverId: string,
+  agentId: string
+): ArtifactItem[] {
+  return state.agentArtifacts.get(`${serverId}:${agentId}`) ?? EMPTY_ARTIFACTS;
+}

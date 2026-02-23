@@ -716,7 +716,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(funct
                 </TooltipContent>
               </Tooltip>
             )}
-            {leftContent}
+            {leftContent ? <View style={styles.leftContentSlot}>{leftContent}</View> : null}
           </View>
 
           {/* Right: voice button, contextual button (realtime/send/cancel) */}
@@ -937,11 +937,20 @@ const styles = StyleSheet.create(((theme: any) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing[2],
+    flex: 1,
+    minWidth: 0,
+    marginRight: theme.spacing[2],
+  },
+  leftContentSlot: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
   },
   rightButtonGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing[2],
+    flexShrink: 0,
   },
   attachButton: {
     width: 34,

@@ -4,9 +4,9 @@ import { AGENT_PROVIDER_IDS } from "./provider-manifest.js";
 import { resolveEnabledAgentProviders } from "./provider-policy.js";
 
 describe("resolveEnabledAgentProviders", () => {
-  it("defaults to nanoclaw-only policy", () => {
+  it("defaults to nanoclaw + deepinfra policy", () => {
     const enabled = resolveEnabledAgentProviders({ env: {} });
-    expect(Array.from(enabled).sort()).toEqual(["nanoclaw"]);
+    expect(Array.from(enabled).sort()).toEqual(["deepinfra", "nanoclaw"]);
   });
 
   it("supports enabling all providers through env", () => {
@@ -34,7 +34,7 @@ describe("resolveEnabledAgentProviders", () => {
     const enabled = resolveEnabledAgentProviders({
       env: { PASEO_ENABLED_AGENT_PROVIDERS: "fake-provider,another-one" },
     });
-    expect(Array.from(enabled).sort()).toEqual(["nanoclaw"]);
+    expect(Array.from(enabled).sort()).toEqual(["deepinfra", "nanoclaw"]);
   });
 
   it("uses explicit provider list over env when provided", () => {
@@ -45,4 +45,3 @@ describe("resolveEnabledAgentProviders", () => {
     expect(Array.from(enabled).sort()).toEqual(["nanoclaw", "opencode"]);
   });
 });
-
