@@ -295,6 +295,14 @@ function supportsLiveEventStream(
   );
 }
 
+function normalizeMessageId(messageId: string | undefined): string | undefined {
+  if (typeof messageId !== "string") {
+    return undefined;
+  }
+  const trimmed = messageId.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export class AgentManager {
   private readonly clients = new Map<AgentProvider, AgentClient>();
   private readonly agents = new Map<string, ActiveManagedAgent>();
@@ -929,10 +937,11 @@ export class AgentManager {
     options?: { messageId?: string; emitState?: boolean }
   ): void {
     const agent = this.requireAgent(agentId);
+    const normalizedMessageId = normalizeMessageId(options?.messageId);
     const item: AgentTimelineItem = {
       type: "user_message",
       text,
-      messageId: options?.messageId,
+      messageId: normalizedMessageId,
     };
     const updatedAt = this.touchUpdatedAt(agent);
     agent.lastUserMessageAt = updatedAt;
@@ -1434,6 +1443,10 @@ export class AgentManager {
     if (this.agents.has(resolvedAgentId)) {
       throw new Error(`Agent with id ${resolvedAgentId} already exists`);
     }
+    const initialPersistedTitle = await this.resolveInitialPersistedTitle(
+      resolvedAgentId,
+      config
+    );
 
     const now = new Date();
     const initialTimeline = options?.timeline ? [...options.timeline] : [];
@@ -1494,7 +1507,7 @@ export class AgentManager {
     this.previousStatuses.set(resolvedAgentId, managed.lifecycle);
     await this.refreshRuntimeInfo(managed);
     await this.persistSnapshot(managed, {
-      title: config.title ?? null,
+      title: initialPersistedTitle,
     });
     this.emitState(managed);
 
@@ -1504,6 +1517,20 @@ export class AgentManager {
     this.emitState(managed);
     this.startLiveEventPump(managed);
     return { ...managed };
+  }
+
+  private async resolveInitialPersistedTitle(
+    agentId: string,
+    config: AgentSessionConfig
+  ): Promise<string | null> {
+    const existing = await this.registry?.get(agentId);
+    if (existing) {
+      return existing.title ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(config, "title")) {
+      return config.title ?? null;
+    }
+    return null;
   }
 
   private buildTimelineRowsFromItems(
@@ -1613,9 +1640,25 @@ export class AgentManager {
       return;
     }
     agent.historyPrimed = true;
+    const canonicalUserMessagesById = new Map(
+      agent.timelineRows.flatMap<[string, string]>((row) => {
+        if (row.item.type !== "user_message") {
+          return [];
+        }
+        const messageId = normalizeMessageId(row.item.messageId);
+        if (!messageId) {
+          return [];
+        }
+        return [[messageId, row.item.text]];
+      })
+    );
     try {
       for await (const event of agent.session.streamHistory()) {
-        this.handleStreamEvent(agent, event, { fromHistory: true });
+        this.handleStreamEvent(agent, event, {
+          fromHistory: true,
+          canonicalUserMessagesById:
+            canonicalUserMessagesById.size > 0 ? canonicalUserMessagesById : undefined,
+        });
       }
     } catch {
       // ignore history failures
@@ -1625,7 +1668,10 @@ export class AgentManager {
   private handleStreamEvent(
     agent: ActiveManagedAgent,
     event: AgentStreamEvent,
-    options?: { fromHistory?: boolean }
+    options?: {
+      fromHistory?: boolean;
+      canonicalUserMessagesById?: ReadonlyMap<string, string>;
+    }
   ): void {
     // Only update timestamp for live events, not history replay
     if (!options?.fromHistory) {
@@ -1650,6 +1696,25 @@ export class AgentManager {
         }
         break;
       case "timeline":
+        // Skip provider-replayed user_message items during history hydration.
+        // These are already canonically recorded by recordUserMessage() and replaying them would
+        // create duplicates. Match by messageId (not text) to avoid dropping legitimate
+        // provider-origin messages that happen to reuse the same text.
+        if (
+          options?.fromHistory &&
+          event.item.type === "user_message"
+        ) {
+          const eventMessageId = normalizeMessageId(event.item.messageId);
+          if (eventMessageId) {
+            const canonicalText = options?.canonicalUserMessagesById?.get(eventMessageId);
+            if (canonicalText === event.item.text) {
+              break;
+            }
+          }
+        }
+        if (this.shouldSuppressLiveUserMessageEcho(agent, event, options)) {
+          break;
+        }
         timelineRow = this.recordTimeline(agent, event.item);
         if (
           !options?.fromHistory &&
@@ -1731,6 +1796,35 @@ export class AgentManager {
           }
         : undefined);
     }
+  }
+
+  private shouldSuppressLiveUserMessageEcho(
+    agent: ActiveManagedAgent,
+    event: AgentStreamEvent,
+    options?: {
+      fromHistory?: boolean;
+      canonicalUserMessagesById?: ReadonlyMap<string, string>;
+    }
+  ): boolean {
+    if (options?.fromHistory || event.type !== "timeline") {
+      return false;
+    }
+    if (event.item.type !== "user_message" || !agent.pendingRun) {
+      return false;
+    }
+    const eventMessageId = normalizeMessageId(event.item.messageId);
+    const eventText = event.item.text;
+    if (!eventMessageId) {
+      return false;
+    }
+    return agent.timelineRows.some((row) => {
+      const rowItem = row.item;
+      if (rowItem.type !== "user_message") {
+        return false;
+      }
+      const rowMessageId = normalizeMessageId(rowItem.messageId);
+      return rowMessageId === eventMessageId && rowItem.text === eventText;
+    });
   }
 
   private recordTimeline(

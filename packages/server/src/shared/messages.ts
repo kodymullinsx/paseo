@@ -579,6 +579,7 @@ export const CreateAgentRequestMessageSchema = z.object({
   config: AgentSessionConfigSchema,
   worktreeName: z.string().optional(),
   initialPrompt: z.string().optional(),
+  clientMessageId: z.string().optional(),
   outputSchema: z.record(z.unknown()).optional(),
   images: z
     .array(

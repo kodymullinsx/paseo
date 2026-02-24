@@ -649,6 +649,14 @@ function AgentScreenContent({
   }, [optimisticStreamItems, streamItems]);
 
   const shouldUseOptimisticStream = isPendingCreateForRoute && optimisticStreamItems.length > 0;
+  const authoritativeStatus = agent?.status;
+  const isAuthoritativeBootstrapping =
+    authoritativeStatus === "initializing" || authoritativeStatus === "idle";
+  const showPendingCreateSubmitLoading =
+    isPendingCreateForRoute &&
+    (!authoritativeStatus || isAuthoritativeBootstrapping);
+  const canFinalizePendingCreate =
+    Boolean(authoritativeStatus) && !isAuthoritativeBootstrapping;
 
   const placeholderAgent: Agent | null = useMemo(() => {
     if (!shouldUseOptimisticStream || !resolvedAgentId) {
@@ -727,7 +735,7 @@ function AgentScreenContent({
         item.kind === "user_message" &&
         (item.id === pendingCreate.messageId || item.text === pendingCreate.text)
     );
-    if (agent && hasUserMessage) {
+    if (hasUserMessage && canFinalizePendingCreate) {
       if (
         resolvedAgentId &&
         pendingCreate.images &&
@@ -757,7 +765,7 @@ function AgentScreenContent({
       clearPendingCreate();
     }
   }, [
-    agent,
+    canFinalizePendingCreate,
     clearPendingCreate,
     isPendingCreateForRoute,
     pendingCreate,
@@ -1238,6 +1246,7 @@ function AgentScreenContent({
               agentId={resolvedAgentId}
               serverId={serverId}
               autoFocus
+              isSubmitLoading={showPendingCreateSubmitLoading}
               onAddImages={handleAddImagesCallback}
             />
           )}

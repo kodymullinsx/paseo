@@ -138,6 +138,7 @@ import {
 import type { Resolvable } from './speech/provider-resolver.js'
 import type { SpeechReadinessSnapshot, SpeechReadinessState } from './speech/speech-runtime.js'
 import type pino from 'pino'
+import { resolveClientMessageId } from './client-message-id.js'
 
 const execAsync = promisify(exec)
 const READ_ONLY_GIT_ENV: NodeJS.ProcessEnv = {
@@ -1731,7 +1732,6 @@ export class Session {
       }
 
       await this.agentStorage.applySnapshot(liveAgent, {
-        title: liveAgent.config.title ?? null,
         internal: liveAgent.internal,
       })
       archivedRecord = await this.agentStorage.get(agentId)
@@ -2497,8 +2497,17 @@ export class Session {
   private async handleCreateAgentRequest(
     msg: Extract<SessionInboundMessage, { type: 'create_agent_request' }>
   ): Promise<void> {
-    const { config, worktreeName, requestId, initialPrompt, outputSchema, git, images, labels } =
-      msg
+    const {
+      config,
+      worktreeName,
+      requestId,
+      initialPrompt,
+      clientMessageId,
+      outputSchema,
+      git,
+      images,
+      labels,
+    } = msg
     this.sessionLogger.info(
       { cwd: config.cwd, provider: config.provider, worktreeName },
       `Creating agent in ${config.cwd} (${config.provider})${
@@ -2532,7 +2541,7 @@ export class Session {
           await this.handleSendAgentMessage(
             snapshot.id,
             trimmedPrompt,
-            uuidv4(),
+            resolveClientMessageId(clientMessageId),
             images,
             outputSchema ? { outputSchema } : undefined
           )

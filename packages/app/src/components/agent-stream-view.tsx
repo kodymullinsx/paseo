@@ -109,6 +109,8 @@ export function AgentStreamView({
   const hasScrolledInitially = useRef(false);
   const hasAutoScrolledOnce = useRef(false);
   const isNearBottomRef = useRef(true);
+  const pendingAutoScrollFrameRef = useRef<number | null>(null);
+  const pendingAutoScrollAnimatedRef = useRef(false);
   const streamItemCountRef = useRef(0);
   const streamScrollbarMetrics = useWebDesktopScrollbarMetrics();
   const [expandedInlineToolCallIds, setExpandedInlineToolCallIds] = useState<Set<string>>(new Set());
@@ -252,6 +254,35 @@ export function AgentStreamView({
     []
   );
 
+  const scheduleAutoScroll = useCallback(
+    ({ animated }: { animated: boolean }) => {
+      pendingAutoScrollAnimatedRef.current =
+        pendingAutoScrollAnimatedRef.current || animated;
+
+      if (pendingAutoScrollFrameRef.current !== null) {
+        return;
+      }
+
+      pendingAutoScrollFrameRef.current = requestAnimationFrame(() => {
+        pendingAutoScrollFrameRef.current = null;
+        const shouldAnimate = pendingAutoScrollAnimatedRef.current;
+        pendingAutoScrollAnimatedRef.current = false;
+        scrollToBottomInternal({ animated: shouldAnimate });
+      });
+    },
+    [scrollToBottomInternal]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (pendingAutoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(pendingAutoScrollFrameRef.current);
+        pendingAutoScrollFrameRef.current = null;
+      }
+      pendingAutoScrollAnimatedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (streamItems.length === 0) {
       return;
@@ -271,9 +302,9 @@ export function AgentStreamView({
     }
 
     const shouldAnimate = hasScrolledInitially.current;
-    scrollToBottomInternal({ animated: shouldAnimate });
+    scheduleAutoScroll({ animated: shouldAnimate });
     hasScrolledInitially.current = true;
-  }, [streamItems, scrollToBottomInternal]);
+  }, [streamItems, scheduleAutoScroll]);
 
   function scrollToBottom() {
     scrollToBottomInternal({ animated: true });
@@ -481,7 +512,7 @@ export function AgentStreamView({
       const getTurnContent = () => collectAssistantTurnContent(flatListData, index);
 
       return (
-        <View style={[stylesheet.streamItemWrapper, { marginBottom: gapBelow }]}>
+        <View style={[stylesheet.paddedContentWrapper, { marginBottom: gapBelow }]}>
           {content}
           {isEndOfAssistantTurn ? (
             <TurnCopyButton getContent={getTurnContent} />
@@ -582,7 +613,7 @@ export function AgentStreamView({
     const leftContent = showWorkingIndicator ? <WorkingIndicator /> : null;
 
     return (
-      <View style={stylesheet.contentWrapper}>
+      <View style={stylesheet.paddedContentWrapper}>
         <View
           style={[
             stylesheet.listHeaderContent,
@@ -664,7 +695,7 @@ export function AgentStreamView({
 
     if (shouldShowWorking) {
       return (
-        <View style={[stylesheet.emptyState, stylesheet.contentWrapper]}>
+        <View style={[stylesheet.emptyState, stylesheet.paddedContentWrapper]}>
           <ActivityIndicator
             size="small"
             color={theme.colors.foregroundMuted}
@@ -675,7 +706,7 @@ export function AgentStreamView({
     }
 
     return (
-      <View style={[stylesheet.emptyState, stylesheet.contentWrapper]}>
+      <View style={[stylesheet.emptyState, stylesheet.paddedContentWrapper]}>
         <Text style={stylesheet.emptyStateText}>
           Start chatting with this agent...
         </Text>
@@ -1298,17 +1329,17 @@ const stylesheet = StyleSheet.create((theme) => ({
     flex: 1,
     backgroundColor: theme.colors.surface0,
   },
-  contentWrapper: {
+  paddedContentWrapper: {
     width: "100%",
     maxWidth: MAX_CONTENT_WIDTH,
     alignSelf: "center",
-  },
-  list: {
-    flex: 1,
     paddingHorizontal: {
       xs: theme.spacing[2],
       md: theme.spacing[4],
     },
+  },
+  list: {
+    flex: 1,
   },
   streamItemWrapper: {
     width: "100%",
