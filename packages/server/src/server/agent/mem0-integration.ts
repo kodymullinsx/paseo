@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { Logger } from "pino";
@@ -22,10 +23,14 @@ type Mem0InitConfig = {
   embeddingModel: string;
   dedupModel: string;
   historyDbPath: string;
+  threshold: number;
 };
 
 type Mem0Runtime = {
-  search: (query: string, options: { userId: string; limit: number }) => Promise<string[]>;
+  search: (
+    query: string,
+    options: { userId: string; limit: number; threshold: number }
+  ) => Promise<string[]>;
   store: (content: string, options: { userId: string }) => Promise<void>;
 };
 
@@ -83,7 +88,15 @@ function resolveInitConfig(): Mem0InitConfig | null {
     embeddingModel:
       readTrimmedEnv("PASEO_MEM0_EMBEDDING_MODEL") ?? "qwen3-embedding:8b-fp16",
     dedupModel: readTrimmedEnv("PASEO_MEM0_DEDUP_MODEL") ?? "gpt-oss:20b",
-    historyDbPath: path.join(paseoHome, "mem0.db"),
+    historyDbPath:
+      readTrimmedEnv("PASEO_MEM0_HISTORY_DB_PATH") ??
+      readTrimmedEnv("MEM0_HISTORY_DB_PATH") ??
+      path.join(paseoHome, "mem0.db"),
+    threshold: Number.parseFloat(
+      readTrimmedEnv("PASEO_MEM0_THRESHOLD") ??
+        readTrimmedEnv("MEM0_THRESHOLD") ??
+        "0.5"
+    ),
   };
 }
 
@@ -129,6 +142,7 @@ async function initializeRuntime(logger: Logger): Promise<Mem0Runtime | null> {
   }
 
   try {
+    await mkdir(path.dirname(config.historyDbPath), { recursive: true });
     const [{ Memory }, qdrantModule] = await Promise.all([
       dynamicImport("mem0ai/oss"),
       dynamicImport("@qdrant/js-client-rest"),
@@ -184,6 +198,7 @@ async function initializeRuntime(logger: Logger): Promise<Mem0Runtime | null> {
           collection: config.collectionName,
           embeddingModel: config.embeddingModel,
           dedupModel: config.dedupModel,
+          threshold: config.threshold,
         },
         "Mem0 initialized"
       );
@@ -194,6 +209,7 @@ async function initializeRuntime(logger: Logger): Promise<Mem0Runtime | null> {
         const result = await memory.search(query, {
           userId: options.userId,
           limit: options.limit,
+          threshold: options.threshold,
         });
         return coerceMemoryStrings(result);
       },
@@ -302,9 +318,16 @@ export async function searchMemories(
   const timeoutMs = Number.isFinite(options?.timeoutMs)
     ? Math.max(200, Math.floor(options?.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS))
     : DEFAULT_SEARCH_TIMEOUT_MS;
+  const thresholdRaw =
+    readTrimmedEnv("PASEO_MEM0_THRESHOLD") ?? readTrimmedEnv("MEM0_THRESHOLD") ?? "0.5";
+  const threshold = Number.parseFloat(thresholdRaw);
   try {
     return await withTimeout(
-      runtime.search(truncate(normalizedQuery, MAX_QUERY_CHARS), { userId, limit }),
+      runtime.search(truncate(normalizedQuery, MAX_QUERY_CHARS), {
+        userId,
+        limit,
+        threshold: Number.isFinite(threshold) ? threshold : 0.5,
+      }),
       timeoutMs,
       []
     );
@@ -345,4 +368,17 @@ export async function storeMemory(
   } catch (error) {
     logger.warn({ err: error }, "Mem0 store failed");
   }
+}
+
+/**
+ * Test-only helpers to validate env/config wiring and reset module state.
+ * Not used by production code paths.
+ */
+export function __testOnly_resolveInitConfig(): Mem0InitConfig | null {
+  return resolveInitConfig();
+}
+
+export function __testOnly_resetRuntimeState(): void {
+  runtimePromise = null;
+  initLogState = "none";
 }
